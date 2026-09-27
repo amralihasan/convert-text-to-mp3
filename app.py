@@ -12,6 +12,7 @@ from conversation_to_mp3 import (
     convert_conversation,
     FALLBACK_VOICE,
 )
+from history_manager import HistoryManager
 
 # Curated High-Quality Voices categorized by Gender
 MALE_VOICES = [
@@ -97,8 +98,11 @@ class ConversationApp(ctk.CTk):
 
         # Window Configuration
         self.title("Conversation to MP3 Studio")
-        self.geometry("1120 x 800")
-        self.minsize(960, 680)
+        self.geometry("1140 x 820")
+        self.minsize(980, 700)
+
+        # Persistence & History
+        self.history_mgr = HistoryManager()
 
         # Application state
         self.is_generating = False
@@ -106,57 +110,76 @@ class ConversationApp(ctk.CTk):
         self.speaker_controls = {}  # speaker_name -> dict of widgets & state
         self.last_detected_speakers = []
         self.current_player_process = None
+        self.playing_file_path = None
         self.last_generated_file = None
+        self.history_play_buttons = {}  # entry_id -> button widget
 
         # Base directories
         self.default_destination = os.path.abspath(os.path.dirname(__file__))
 
         self._setup_ui()
         self._load_initial_text()
+        self._refresh_history_tab()
 
     def _setup_ui(self):
-        # Configure grid weight
-        self.grid_columnconfigure(0, weight=6, minsize=440)
-        self.grid_columnconfigure(1, weight=5, minsize=440)
+        # Master container grid
+        self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
         # ------------------ Top Header ------------------
-        header_frame = ctk.CTkFrame(self, fg_color="transparent", height=60)
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=24, pady=(16, 8))
+        header_frame = ctk.CTkFrame(self, fg_color="transparent", height=50)
+        header_frame.grid(row=0, column=0, sticky="ew", padx=24, pady=(14, 4))
         header_frame.grid_columnconfigure(0, weight=1)
 
         title_label = ctk.CTkLabel(
             header_frame,
             text="🎙️ Conversation to MP3 Studio",
-            font=ctk.CTkFont(size=24, weight="bold"),
+            font=ctk.CTkFont(size=23, weight="bold"),
             anchor="w",
         )
         title_label.grid(row=0, column=0, sticky="w")
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="Convert multi-speaker dialogue text into natural, multi-voice audio with Microsoft Edge TTS",
-            font=ctk.CTkFont(size=13),
+            text="Generate natural multi-speaker dialogues with Microsoft Edge TTS & auto-archive audio history",
+            font=ctk.CTkFont(size=12),
             text_color="gray",
             anchor="w",
         )
         subtitle_label.grid(row=1, column=0, sticky="w")
 
+        # ------------------ Main Tabview ------------------
+        self.tabview = ctk.CTkTabview(self, corner_radius=12)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 16))
+
+        # Add tabs
+        self.tab_studio = self.tabview.add("🎙️ Studio")
+        self.tab_history = self.tabview.add("📜 History (0)")
+
+        self._setup_studio_tab()
+        self._setup_history_tab()
+
+    def _setup_studio_tab(self):
+        tab = self.tab_studio
+        tab.grid_columnconfigure(0, weight=6, minsize=440)
+        tab.grid_columnconfigure(1, weight=5, minsize=440)
+        tab.grid_rowconfigure(0, weight=1)
+
         # ------------------ Left: Script Editor ------------------
-        left_frame = ctk.CTkFrame(self, corner_radius=12)
-        left_frame.grid(row=1, column=0, sticky="nsew", padx=(24, 12), pady=(0, 20))
+        left_frame = ctk.CTkFrame(tab, corner_radius=10)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(6, 8), pady=8)
         left_frame.grid_rowconfigure(2, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
         # Toolbar above editor
         editor_header = ctk.CTkFrame(left_frame, fg_color="transparent")
-        editor_header.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        editor_header.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 6))
         editor_header.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
             editor_header,
             text="📝 Dialogue Script",
-            font=ctk.CTkFont(size=16, weight="bold"),
+            font=ctk.CTkFont(size=15, weight="bold"),
         ).grid(row=0, column=0, sticky="w")
 
         btn_bar = ctk.CTkFrame(editor_header, fg_color="transparent")
@@ -165,47 +188,47 @@ class ConversationApp(ctk.CTk):
         ctk.CTkButton(
             btn_bar,
             text="📋 Paste",
-            width=70,
+            width=68,
             height=28,
             command=self._paste_clipboard,
-        ).pack(side="left", padx=4)
+        ).pack(side="left", padx=3)
 
         ctk.CTkButton(
             btn_bar,
             text="📂 Load File",
-            width=85,
+            width=80,
             height=28,
             command=self._load_file_dialog,
-        ).pack(side="left", padx=4)
+        ).pack(side="left", padx=3)
 
         ctk.CTkButton(
             btn_bar,
             text="✨ Sample",
-            width=75,
+            width=70,
             height=28,
             command=self._load_sample,
             fg_color="#3B82F6",
             hover_color="#2563EB",
-        ).pack(side="left", padx=4)
+        ).pack(side="left", padx=3)
 
         ctk.CTkButton(
             btn_bar,
             text="🗑️ Clear",
-            width=65,
+            width=60,
             height=28,
             command=self._clear_text,
             fg_color="#EF4444",
             hover_color="#DC2626",
-        ).pack(side="left", padx=4)
+        ).pack(side="left", padx=3)
 
-        # Instructions hint
+        # Hint
         ctk.CTkLabel(
             left_frame,
-            text="Format: 'SpeakerName: Text to speak' on each line. Empty lines are ignored.",
+            text="Format: 'Speaker: Message' on each line. Empty lines are ignored.",
             font=ctk.CTkFont(size=11),
             text_color="#9CA3AF",
             anchor="w",
-        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 6))
+        ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 6))
 
         # Big Text Area
         self.text_editor = ctk.CTkTextbox(
@@ -214,7 +237,7 @@ class ConversationApp(ctk.CTk):
             wrap="word",
             corner_radius=8,
         )
-        self.text_editor.grid(row=2, column=0, sticky="nsew", padx=16, pady=(0, 10))
+        self.text_editor.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 10))
         self.text_editor.bind("<KeyRelease>", lambda e: self._on_text_changed())
 
         # Editor Footer (Stats & Speaker count)
@@ -225,16 +248,16 @@ class ConversationApp(ctk.CTk):
             text_color="#A1A1AA",
             anchor="w",
         )
-        self.editor_stats_label.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 14))
+        self.editor_stats_label.grid(row=3, column=0, sticky="w", padx=14, pady=(0, 12))
 
         # ------------------ Right: Settings & Actions ------------------
-        right_scroll = ctk.CTkScrollableFrame(self, corner_radius=12)
-        right_scroll.grid(row=1, column=1, sticky="nsew", padx=(12, 24), pady=(0, 20))
+        right_scroll = ctk.CTkScrollableFrame(tab, corner_radius=10)
+        right_scroll.grid(row=0, column=1, sticky="nsew", padx=(8, 6), pady=8)
         right_scroll.grid_columnconfigure(0, weight=1)
 
-        # 1. Speaker Voice Assignment Card
+        # 1. Speaker Voice & Gender Card
         voices_card = ctk.CTkFrame(right_scroll, corner_radius=10)
-        voices_card.pack(fill="x", pady=(0, 14))
+        voices_card.pack(fill="x", pady=(0, 12))
         voices_card.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -242,23 +265,23 @@ class ConversationApp(ctk.CTk):
             text="👥 Speaker Voice & Gender",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 2))
+        ).grid(row=0, column=0, sticky="w", padx=14, pady=(12, 2))
 
         ctk.CTkLabel(
             voices_card,
-            text="Select Male or Female for each speaker to customize their voice:",
+            text="Choose Male or Female for each speaker to customize their voice:",
             font=ctk.CTkFont(size=12),
             text_color="#9CA3AF",
             anchor="w",
-        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
+        ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 8))
 
         self.speakers_container = ctk.CTkFrame(voices_card, fg_color="transparent")
-        self.speakers_container.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 14))
+        self.speakers_container.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
         self.speakers_container.grid_columnconfigure(0, weight=1)
 
         # 2. Audio Settings Card
         audio_card = ctk.CTkFrame(right_scroll, corner_radius=10)
-        audio_card.pack(fill="x", pady=(0, 14))
+        audio_card.pack(fill="x", pady=(0, 12))
         audio_card.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
@@ -266,11 +289,11 @@ class ConversationApp(ctk.CTk):
             text="⚙️ Audio Customization",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 10))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 8))
 
         # Speed / Rate Slider
         self.rate_label = ctk.CTkLabel(audio_card, text="Speaking Speed: -10% (Recommended for practice)", anchor="w")
-        self.rate_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 4))
+        self.rate_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 2))
 
         self.rate_slider = ctk.CTkSlider(
             audio_card,
@@ -280,11 +303,11 @@ class ConversationApp(ctk.CTk):
             command=self._on_rate_slider_changed,
         )
         self.rate_slider.set(-10)
-        self.rate_slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 12))
+        self.rate_slider.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 10))
 
         # Pause Between Speakers Slider
         self.pause_label = ctk.CTkLabel(audio_card, text="Pause Between Speakers: 500 ms", anchor="w")
-        self.pause_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 4))
+        self.pause_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 2))
 
         self.pause_slider = ctk.CTkSlider(
             audio_card,
@@ -294,11 +317,11 @@ class ConversationApp(ctk.CTk):
             command=self._on_pause_slider_changed,
         )
         self.pause_slider.set(500)
-        self.pause_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 16))
+        self.pause_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
 
         # 3. Output Destination Card
         dest_card = ctk.CTkFrame(right_scroll, corner_radius=10)
-        dest_card.pack(fill="x", pady=(0, 14))
+        dest_card.pack(fill="x", pady=(0, 12))
         dest_card.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -306,11 +329,11 @@ class ConversationApp(ctk.CTk):
             text="📁 Destination & Filename",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 8))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 6))
 
         # Folder row
         folder_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        folder_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 8))
+        folder_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
         folder_row.grid_columnconfigure(0, weight=1)
 
         self.folder_entry = ctk.CTkEntry(
@@ -324,14 +347,14 @@ class ConversationApp(ctk.CTk):
         ctk.CTkButton(
             folder_row,
             text="Browse...",
-            width=90,
+            width=85,
             height=34,
             command=self._browse_destination_folder,
         ).grid(row=0, column=1)
 
         # Filename row
         file_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        file_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 14))
+        file_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
         file_row.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(file_row, text="File Name:").grid(row=0, column=0, padx=(0, 8))
@@ -345,7 +368,7 @@ class ConversationApp(ctk.CTk):
 
         # 4. Generate Action & Progress Card
         action_card = ctk.CTkFrame(right_scroll, corner_radius=10)
-        action_card.pack(fill="x", pady=(0, 8))
+        action_card.pack(fill="x", pady=(0, 6))
         action_card.grid_columnconfigure(0, weight=1)
 
         self.generate_btn = ctk.CTkButton(
@@ -357,7 +380,7 @@ class ConversationApp(ctk.CTk):
             hover_color="#059669",
             command=self._start_generation,
         )
-        self.generate_btn.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 10))
+        self.generate_btn.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
 
         self.cancel_btn = ctk.CTkButton(
             action_card,
@@ -371,7 +394,7 @@ class ConversationApp(ctk.CTk):
 
         self.progress_bar = ctk.CTkProgressBar(action_card, height=12)
         self.progress_bar.set(0)
-        self.progress_bar.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+        self.progress_bar.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 6))
 
         self.status_label = ctk.CTkLabel(
             action_card,
@@ -379,13 +402,14 @@ class ConversationApp(ctk.CTk):
             font=ctk.CTkFont(size=12),
             text_color="#9CA3AF",
         )
-        self.status_label.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 14))
+        self.status_label.grid(row=2, column=0, sticky="w", padx=14, pady=(0, 12))
 
-        # Result actions (Open in Finder / Play Audio)
+        # Result actions (Open in Finder / Play Audio / View in History)
         self.result_frame = ctk.CTkFrame(action_card, fg_color="transparent")
-        self.result_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
+        self.result_frame.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
         self.result_frame.grid_columnconfigure(0, weight=1)
         self.result_frame.grid_columnconfigure(1, weight=1)
+        self.result_frame.grid_columnconfigure(2, weight=1)
 
         self.play_btn = ctk.CTkButton(
             self.result_frame,
@@ -395,17 +419,303 @@ class ConversationApp(ctk.CTk):
             hover_color="#4338CA",
             command=self._toggle_playback,
         )
-        self.play_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.play_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
 
         self.open_finder_btn = ctk.CTkButton(
             self.result_frame,
-            text="📂 Open in Finder",
+            text="📂 In Finder",
             height=36,
             command=self._open_in_finder,
         )
-        self.open_finder_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self.open_finder_btn.grid(row=0, column=1, sticky="ew", padx=4)
+
+        self.view_history_btn = ctk.CTkButton(
+            self.result_frame,
+            text="📜 In History",
+            height=36,
+            fg_color="#0D9488",
+            hover_color="#0F766E",
+            command=lambda: self.tabview.set(self._get_history_tab_name()),
+        )
+        self.view_history_btn.grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
         self.result_frame.grid_remove()  # Hide until MP3 is generated
+
+    # ------------------ History Tab Setup ------------------
+    def _setup_history_tab(self):
+        tab = self.tab_history
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
+
+        # Header with Search & Refresh
+        top_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        top_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 12))
+        top_bar.grid_columnconfigure(0, weight=1)
+
+        self.search_entry = ctk.CTkEntry(
+            top_bar,
+            placeholder_text="🔍 Search past conversations by title, speaker, or date...",
+            height=36,
+        )
+        self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.search_entry.bind("<KeyRelease>", lambda e: self._filter_history_list())
+
+        ctk.CTkButton(
+            top_bar,
+            text="🔄 Refresh",
+            width=90,
+            height=36,
+            command=self._refresh_history_tab,
+        ).grid(row=0, column=1)
+
+        # Scrollable list of history items
+        self.history_scroll = ctk.CTkScrollableFrame(tab, corner_radius=10)
+        self.history_scroll.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        self.history_scroll.grid_columnconfigure(0, weight=1)
+
+    def _get_history_tab_name(self):
+        for name in self.tabview._name_list:
+            if "History" in name:
+                return name
+        return "📜 History"
+
+    def _refresh_history_tab(self):
+        # Update tab label with item count
+        entries = self.history_mgr.get_all()
+        count = len(entries)
+
+        # Find and rename the history tab header safely
+        try:
+            for tab_name in list(self.tabview._name_list):
+                if "History" in tab_name:
+                    new_tab_name = f"📜 History ({count})"
+                    if tab_name != new_tab_name:
+                        self.tabview._segmented_button._buttons_dict[tab_name].configure(text=new_tab_name)
+                    break
+        except Exception:
+            pass
+
+        self._render_history_items(entries)
+
+    def _filter_history_list(self):
+        query = self.search_entry.get().strip().lower()
+        all_entries = self.history_mgr.get_all()
+        if not query:
+            self._render_history_items(all_entries)
+            return
+
+        filtered = []
+        for e in all_entries:
+            title = e.get("title", "").lower()
+            speakers_str = " ".join([s.get("name", "") for s in e.get("speakers", [])]).lower()
+            date_str = e.get("created_at", "").lower()
+
+            if query in title or query in speakers_str or query in date_str:
+                filtered.append(e)
+
+        self._render_history_items(filtered)
+
+    def _render_history_items(self, entries):
+        # Clear existing cards
+        for widget in self.history_scroll.winfo_children():
+            widget.destroy()
+
+        self.history_play_buttons = {}
+
+        if not entries:
+            empty_frame = ctk.CTkFrame(self.history_scroll, fg_color="transparent")
+            empty_frame.pack(fill="both", expand=True, pady=60)
+
+            ctk.CTkLabel(
+                empty_frame,
+                text="📜 No Saved Conversations Yet",
+                font=ctk.CTkFont(size=18, weight="bold"),
+                text_color="#9CA3AF",
+            ).pack(pady=(0, 6))
+
+            ctk.CTkLabel(
+                empty_frame,
+                text="When you click 'Generate MP3' in the Studio, both the conversation text and the generated audio\nwill automatically be archived here for future playback and reference.",
+                font=ctk.CTkFont(size=13),
+                text_color="#6B7280",
+                justify="center",
+            ).pack()
+
+            ctk.CTkButton(
+                empty_frame,
+                text="Go to Studio",
+                width=120,
+                height=34,
+                command=lambda: self.tabview.set("🎙️ Studio"),
+            ).pack(pady=16)
+            return
+
+        for entry in entries:
+            self._create_history_card(entry)
+
+    def _create_history_card(self, entry):
+        entry_id = entry["id"]
+        title = entry.get("title", "Conversation")
+        created_at = entry.get("created_at", "")
+        duration_sec = entry.get("duration_sec", 0)
+        lines_count = entry.get("lines_count", 0)
+        file_size_kb = entry.get("file_size_bytes", 0) / 1024
+        audio_file = entry.get("audio_file", "")
+        speakers = entry.get("speakers", [])
+
+        card = ctk.CTkFrame(
+            self.history_scroll,
+            corner_radius=10,
+            fg_color=("#F9FAFB", "#1E293B"),
+        )
+        card.pack(fill="x", pady=6, padx=4)
+        card.grid_columnconfigure(0, weight=1)
+
+        # Header Row: Title & Date
+        hdr_row = ctk.CTkFrame(card, fg_color="transparent")
+        hdr_row.pack(fill="x", padx=14, pady=(10, 4))
+        hdr_row.grid_columnconfigure(0, weight=1)
+
+        title_lbl = ctk.CTkLabel(
+            hdr_row,
+            text=f"💬 {title}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w",
+        )
+        title_lbl.grid(row=0, column=0, sticky="w")
+
+        date_lbl = ctk.CTkLabel(
+            hdr_row,
+            text=f"📅 {created_at}",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8",
+        )
+        date_lbl.grid(row=0, column=1, sticky="e")
+
+        # Metadata Row: Tags (Duration, Size, Lines, Speakers)
+        meta_row = ctk.CTkFrame(card, fg_color="transparent")
+        meta_row.pack(fill="x", padx=14, pady=(0, 8))
+
+        speakers_desc = []
+        for s in speakers:
+            s_name = s.get("name", "")
+            s_gender = "♂" if s.get("gender") == "Male" else "♀"
+            s_voice = s.get("voice", "").split("(")[0].strip()
+            speakers_desc.append(f"{s_name} ({s_gender} {s_voice})")
+
+        speakers_text = " • ".join(speakers_desc) if speakers_desc else "Dialogue"
+
+        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   📝 {lines_count} lines   |   👥 {speakers_text}"
+        ctk.CTkLabel(
+            meta_row,
+            text=meta_text,
+            font=ctk.CTkFont(size=11),
+            text_color="#64748B",
+            anchor="w",
+        ).pack(side="left")
+
+        # Action Buttons Row
+        action_row = ctk.CTkFrame(card, fg_color="transparent")
+        action_row.pack(fill="x", padx=14, pady=(0, 10))
+
+        is_playing_this = (self.playing_file_path == audio_file and self.current_player_process and self.current_player_process.poll() is None)
+        play_text = "⏹️ Stop" if is_playing_this else "▶️ Play"
+        play_color = "#DC2626" if is_playing_this else "#4F46E5"
+        play_hover = "#B91C1C" if is_playing_this else "#4338CA"
+
+        play_btn = ctk.CTkButton(
+            action_row,
+            text=play_text,
+            width=80,
+            height=28,
+            fg_color=play_color,
+            hover_color=play_hover,
+            command=lambda aid=entry_id, apath=audio_file: self._toggle_history_playback(aid, apath),
+        )
+        play_btn.pack(side="left", padx=(0, 6))
+        self.history_play_buttons[entry_id] = play_btn
+
+        ctk.CTkButton(
+            action_row,
+            text="📝 Load to Studio",
+            width=115,
+            height=28,
+            command=lambda eid=entry_id: self._load_history_to_studio(eid),
+        ).pack(side="left", padx=4)
+
+        ctk.CTkButton(
+            action_row,
+            text="📂 In Finder",
+            width=85,
+            height=28,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=lambda p=audio_file: subprocess.run(["open", "-R", p]),
+        ).pack(side="left", padx=4)
+
+        ctk.CTkButton(
+            action_row,
+            text="🗑️ Delete",
+            width=70,
+            height=28,
+            fg_color="#7F1D1D",
+            hover_color="#991B1B",
+            command=lambda eid=entry_id: self._delete_history_item(eid),
+        ).pack(side="right")
+
+    def _toggle_history_playback(self, entry_id, audio_file):
+        if self.playing_file_path == audio_file and self.current_player_process and self.current_player_process.poll() is None:
+            self._stop_playback()
+            return
+
+        self._stop_playback()
+
+        if not os.path.exists(audio_file):
+            messagebox.showwarning("File Missing", "The audio file for this recording could not be found.")
+            return
+
+        btn = self.history_play_buttons.get(entry_id)
+        if btn:
+            btn.configure(text="⏹️ Stop", fg_color="#DC2626", hover_color="#B91C1C")
+
+        self.playing_file_path = audio_file
+
+        def _play():
+            self.current_player_process = subprocess.Popen(["afplay", audio_file])
+            self.current_player_process.wait()
+            self.after(0, self._on_playback_finished)
+
+        threading.Thread(target=_play, daemon=True).start()
+
+    def _on_playback_finished(self):
+        self.playing_file_path = None
+        # Reset studio play button
+        self.play_btn.configure(text="▶️ Play Audio", fg_color="#4F46E5", hover_color="#4338CA")
+        # Reset all history play buttons
+        for btn in self.history_play_buttons.values():
+            try:
+                btn.configure(text="▶️ Play", fg_color="#4F46E5", hover_color="#4338CA")
+            except Exception:
+                pass
+
+    def _load_history_to_studio(self, entry_id):
+        text = self.history_mgr.get_text(entry_id)
+        if not text:
+            messagebox.showwarning("Error", "Could not load conversation text.")
+            return
+
+        self.text_editor.delete("1.0", "end")
+        self.text_editor.insert("1.0", text)
+        self._on_text_changed()
+
+        # Switch to Studio tab
+        self.tabview.set("🎙️ Studio")
+
+    def _delete_history_item(self, entry_id):
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this recorded conversation from history?"):
+            self._stop_playback()
+            self.history_mgr.delete(entry_id)
+            self._refresh_history_tab()
 
     # ------------------ Text Editor Handlers ------------------
     def _load_initial_text(self):
@@ -464,10 +774,8 @@ class ConversationApp(ctk.CTk):
 
     # ------------------ Speaker Voice & Gender Management ------------------
     def _rebuild_speaker_selectors(self, speakers):
-        # Preserve existing speaker choices if already configured
         old_controls = dict(self.speaker_controls)
 
-        # Clear existing rows
         for widget in self.speakers_container.winfo_children():
             widget.destroy()
 
@@ -488,11 +796,9 @@ class ConversationApp(ctk.CTk):
             prev_gender = prev.get("gender")
             prev_voice = prev.get("voice_label")
 
-            # Initial gender determination
             gender = prev_gender if prev_gender else guess_gender(speaker)
             gender_val = "👨 Male" if gender == "Male" else "👩 Female"
 
-            # Speaker Card container
             card = ctk.CTkFrame(
                 self.speakers_container,
                 corner_radius=10,
@@ -538,13 +844,11 @@ class ConversationApp(ctk.CTk):
                 text_color="#94A3B8",
             ).grid(row=0, column=0, padx=(0, 6), sticky="w")
 
-            # Available voice options based on gender
             voice_options = MALE_LABELS if gender == "Male" else FEMALE_LABELS
 
             if prev_voice and prev_voice in voice_options:
                 default_voice = prev_voice
             else:
-                # Default voice assignments
                 if gender == "Male":
                     if speaker.lower() in ("ahmed", "guy"):
                         default_voice = "Guy (US)"
@@ -699,11 +1003,17 @@ class ConversationApp(ctk.CTk):
 
         full_output_path = os.path.join(folder, filename)
 
-        # Build voice map
+        # Build voice map and speakers metadata for history
         voice_map = {}
+        speakers_meta = []
         for speaker, controls in self.speaker_controls.items():
             label = controls["voice_menu"].get()
             voice_map[speaker] = ALL_VOICE_MAP.get(label, FALLBACK_VOICE)
+            speakers_meta.append({
+                "name": speaker,
+                "gender": controls.get("gender", "Male"),
+                "voice": label,
+            })
 
         # Rate and pause
         rate_val = int(self.rate_slider.get())
@@ -714,7 +1024,7 @@ class ConversationApp(ctk.CTk):
         self.is_generating = True
         self.cancel_requested = False
         self.generate_btn.configure(state="disabled", text="⏳ Generating Audio...")
-        self.cancel_btn.grid(row=0, column=1, padx=(6, 16), pady=(16, 10))
+        self.cancel_btn.grid(row=0, column=1, padx=(6, 14), pady=(14, 8))
         self.progress_bar.set(0)
         self.status_label.configure(text="Initializing generation...", text_color="#60A5FA")
         self.result_frame.grid_remove()
@@ -725,7 +1035,7 @@ class ConversationApp(ctk.CTk):
         # Run background thread
         thread = threading.Thread(
             target=self._run_generation_thread,
-            args=(text, voice_map, full_output_path, rate_str, pause_ms),
+            args=(text, voice_map, full_output_path, rate_str, pause_ms, speakers_meta),
             daemon=True,
         )
         thread.start()
@@ -735,7 +1045,7 @@ class ConversationApp(ctk.CTk):
             self.cancel_requested = True
             self.status_label.configure(text="Cancelling generation...", text_color="#EF4444")
 
-    def _run_generation_thread(self, text, voice_map, output_file, rate_str, pause_ms):
+    def _run_generation_thread(self, text, voice_map, output_file, rate_str, pause_ms, speakers_meta):
         def progress_callback(status_msg, progress_fraction):
             self.after(
                 0,
@@ -760,6 +1070,15 @@ class ConversationApp(ctk.CTk):
                     is_cancelled=is_cancelled,
                 )
             )
+
+            # Auto-save to history on success
+            if result:
+                self.history_mgr.save_generation(
+                    text=text,
+                    audio_source_path=output_file,
+                    duration_sec=result["duration_sec"],
+                    speakers_meta=speakers_meta,
+                )
         except Exception as e:
             error_message = str(e)
 
@@ -790,10 +1109,12 @@ class ConversationApp(ctk.CTk):
             dur = result["duration_sec"]
             size_kb = result["file_size_bytes"] / 1024
             self.status_label.configure(
-                text=f"🎉 Successfully created {os.path.basename(output_file)} ({dur:.1f}s, {size_kb:.1f} KB)",
+                text=f"🎉 Created {os.path.basename(output_file)} ({dur:.1f}s, {size_kb:.1f} KB) • Saved to History!",
                 text_color="#10B981",
             )
             self.result_frame.grid()
+            # Refresh history tab content
+            self._refresh_history_tab()
 
     # ------------------ Post-Generation Actions ------------------
     def _open_in_finder(self):
@@ -805,27 +1126,23 @@ class ConversationApp(ctk.CTk):
                 subprocess.run(["open", folder])
 
     def _toggle_playback(self):
-        if self.current_player_process and self.current_player_process.poll() is None:
-            self._stop_playback()
-        else:
-            self._start_playback()
-
-    def _start_playback(self):
         if not self.last_generated_file or not os.path.exists(self.last_generated_file):
             return
 
+        if self.playing_file_path == self.last_generated_file and self.current_player_process and self.current_player_process.poll() is None:
+            self._stop_playback()
+        else:
+            self._start_playback(self.last_generated_file)
+
+    def _start_playback(self, file_path):
         self._stop_playback()
+        self.playing_file_path = file_path
         self.play_btn.configure(text="⏹️ Stop", fg_color="#DC2626", hover_color="#B91C1C")
 
         def _play():
-            self.current_player_process = subprocess.Popen(["afplay", self.last_generated_file])
+            self.current_player_process = subprocess.Popen(["afplay", file_path])
             self.current_player_process.wait()
-            self.after(
-                0,
-                lambda: self.play_btn.configure(
-                    text="▶️ Play Audio", fg_color="#4F46E5", hover_color="#4338CA"
-                ),
-            )
+            self.after(0, self._on_playback_finished)
 
         threading.Thread(target=_play, daemon=True).start()
 
@@ -833,7 +1150,7 @@ class ConversationApp(ctk.CTk):
         if self.current_player_process and self.current_player_process.poll() is None:
             self.current_player_process.terminate()
             self.current_player_process = None
-        self.play_btn.configure(text="▶️ Play Audio", fg_color="#4F46E5", hover_color="#4338CA")
+        self._on_playback_finished()
 
 
 def main():

@@ -1,13 +1,20 @@
 # 🎙️ Conversation to MP3 Studio
 
-A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**.
+A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**. Includes an automatic **History Library** that saves and organizes your past conversation scripts and generated audio recordings for anytime playback.
 
 ---
 
 ## ✨ Features
 
-- **Modern Desktop UI**: Built with `CustomTkinter` featuring dark mode macOS styling.
-- **Dynamic Speaker Recognition**: Automatically detects speakers (e.g., `Ahmed`, `Sarah`, `John`) from your pasted or typed text.
+- **Modern Desktop UI with Tabs**:
+  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, and audio generator.
+  - **📜 History Library Tab**: Persistent archive of every generated conversation with an embedded audio player and management tools.
+- **Persistent History & Playback**:
+  - Automatically saves conversation text and generated MP3 audio into local history archives.
+  - **Embedded Player**: Play, stop, or re-listen to any past recording directly inside the app.
+  - **📝 Load to Studio**: Reload any past conversation script back into the Studio editor with one click.
+  - **🔍 Search & Filter**: Search your history by title, speaker names, or creation date.
+  - **📂 Reveal in Finder**: Instantly reveal any saved audio recording in macOS Finder.
 - **👨 Male / 👩 Female Gender Selector**:
   - Easily toggle each speaker between Male and Female using an interactive segmented button.
   - Automatically filters and populates the voice list with top-quality neural voices tailored to that gender.
@@ -18,7 +25,6 @@ A desktop application and CLI tool that converts conversational dialogue scripts
 - **Speed & Pause Control**: Adjust speaking rate (-30% to +30%) and silence pause duration between speakers.
 - **Destination Folder Picker**: Select any folder on your Mac and specify the output filename.
 - **Background Generation**: Threaded execution ensures the GUI never freezes. Includes smooth progress bar and line-by-line status.
-- **Post-Generation Actions**: Listen to generated audio directly with one click or open the file in macOS Finder.
 - **CLI Mode**: Run headlessly from the terminal whenever needed.
 
 ---

@@ -12,6 +12,11 @@ __pycache__/
 *.mp3
 _part_*.mp3
 
+# User history audio and text files (keep directory structure)
+history/audio/*.mp3
+history/texts/*.txt
+history/index.json
+
 # macOS
 .DS_Store
 .AppleDouble
