@@ -12,7 +12,10 @@ __pycache__/
 *.mp3
 _part_*.mp3
 
-# User history audio and text files (keep directory structure)
+# Keep preset background tracks
+!backgrounds/*.mp3
+
+# User history audio and text files
 history/audio/*.mp3
 history/texts/*.txt
 history/index.json

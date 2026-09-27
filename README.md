@@ -1,19 +1,31 @@
 # 🎙️ Conversation to MP3 Studio
 
-A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**. Includes an automatic **History Library** that saves and organizes your past conversation scripts and generated audio recordings for anytime playback.
+A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**. Includes atmospheric **Background Soundscapes** and an automatic **History Library** that saves and organizes your past conversation scripts and generated audio recordings for anytime playback.
 
 ---
 
 ## ✨ Features
 
 - **Modern Desktop UI with Tabs**:
-  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, and audio generator.
+  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, scene background ambience, and audio generator.
   - **📜 History Library Tab**: Persistent archive of every generated conversation with an embedded audio player and management tools.
+- **☕ Scene Background Ambience (Soundscapes)**:
+  - Add realistic environment sounds behind your dialogue to set the scene:
+    - ☕ **Coffee shop**: Café ambience (chatter, cups, cafe murmurs)
+    - 🏢 **Office**: Office ambience (typing, air, subtle murmur)
+    - 🚗 **Car**: Road & car driving ambience (engine drone, highway road noise)
+    - 🏠 **Home**: Quiet room (natural room tone)
+    - 🛒 **Shopping**: Store & mall ambience (spacious reverberation, cart motion)
+    - 🌳 **Outside**: Park & outdoor nature ambience (birds singing, gentle breeze)
+    - 🚫 **None**: Pure clean speech
+    - 📁 **Custom Audio File**: Use any `.mp3`, `.wav`, or `.m4a` file on your computer.
+  - **🔊 Audition Ambience**: Preview a 5-second sample of any background track before generating.
+  - **Ambience Volume Slider**: Seamlessly control background level (5% to 45%, default 15% for subtle backing).
 - **Persistent History & Playback**:
-  - Automatically saves conversation text and generated MP3 audio into local history archives.
+  - Automatically saves conversation text, generated MP3 audio, and background settings into local history archives.
   - **Embedded Player**: Play, stop, or re-listen to any past recording directly inside the app.
-  - **📝 Load to Studio**: Reload any past conversation script back into the Studio editor with one click.
-  - **🔍 Search & Filter**: Search your history by title, speaker names, or creation date.
+  - **📝 Load to Studio**: Reload any past conversation script and its ambience back into the Studio editor with one click.
+  - **🔍 Search & Filter**: Search your history by title, speaker names, ambience, or creation date.
   - **📂 Reveal in Finder**: Instantly reveal any saved audio recording in macOS Finder.
 - **👨 Male / 👩 Female Gender Selector**:
   - Easily toggle each speaker between Male and Female using an interactive segmented button.

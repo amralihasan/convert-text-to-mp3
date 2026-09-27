@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import subprocess
 import threading
@@ -57,6 +58,21 @@ FEMALE_NAMES = {
     "alice", "sophia", "olivia", "charlotte", "mia", "harper", "evelyn",
 }
 
+# Ambient Soundscape Presets
+BACKGROUND_PRESETS = [
+    ("🚫 None (Pure speech)", None),
+    ("☕ Coffee shop (Café ambience)", "backgrounds/coffee_shop.mp3"),
+    ("🏢 Office (Office ambience)", "backgrounds/office.mp3"),
+    ("🚗 Car (Road/car ambience)", "backgrounds/car.mp3"),
+    ("🏠 Home (Quiet room)", "backgrounds/home.mp3"),
+    ("🛒 Shopping (Store ambience)", "backgrounds/shopping.mp3"),
+    ("🌳 Outside (Park/outdoor ambience)", "backgrounds/outside.mp3"),
+    ("📁 Custom audio file...", "CUSTOM"),
+]
+
+BG_LABEL_TO_PATH = {label: path for label, path in BACKGROUND_PRESETS}
+BG_LABELS = [label for label, _ in BACKGROUND_PRESETS]
+
 
 def guess_gender(speaker_name: str) -> str:
     cleaned = speaker_name.lower().strip()
@@ -98,11 +114,14 @@ class ConversationApp(ctk.CTk):
 
         # Window Configuration
         self.title("Conversation to MP3 Studio")
-        self.geometry("1140 x 820")
-        self.minsize(980, 700)
+        self.geometry("1150 x 840")
+        self.minsize(980, 720)
+
+        # Base directory
+        self.base_dir = os.path.abspath(os.path.dirname(__file__))
 
         # Persistence & History
-        self.history_mgr = HistoryManager()
+        self.history_mgr = HistoryManager(self.base_dir)
 
         # Application state
         self.is_generating = False
@@ -114,8 +133,9 @@ class ConversationApp(ctk.CTk):
         self.last_generated_file = None
         self.history_play_buttons = {}  # entry_id -> button widget
 
-        # Base directories
-        self.default_destination = os.path.abspath(os.path.dirname(__file__))
+        # Custom background audio path if chosen
+        self.custom_bg_path = None
+        self.bg_preview_process = None
 
         self._setup_ui()
         self._load_initial_text()
@@ -141,7 +161,7 @@ class ConversationApp(ctk.CTk):
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="Generate natural multi-speaker dialogues with Microsoft Edge TTS & auto-archive audio history",
+            text="Generate realistic dialogues with neural voices & atmospheric background ambience (Café, Car, Office, Park)",
             font=ctk.CTkFont(size=12),
             text_color="gray",
             anchor="w",
@@ -279,14 +299,77 @@ class ConversationApp(ctk.CTk):
         self.speakers_container.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
         self.speakers_container.grid_columnconfigure(0, weight=1)
 
-        # 2. Audio Settings Card
+        # 2. Ambient Background Card (NEW!)
+        bg_card = ctk.CTkFrame(right_scroll, corner_radius=10)
+        bg_card.pack(fill="x", pady=(0, 12))
+        bg_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            bg_card,
+            text="☕ Scene Background Ambience",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 2))
+
+        ctk.CTkLabel(
+            bg_card,
+            text="Add realistic environment sound behind the dialogue (Café, Car, Office, Park):",
+            font=ctk.CTkFont(size=12),
+            text_color="#9CA3AF",
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 8))
+
+        # Ambience Selector Row
+        bg_row = ctk.CTkFrame(bg_card, fg_color="transparent")
+        bg_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        bg_row.grid_columnconfigure(0, weight=1)
+
+        self.bg_menu = ctk.CTkOptionMenu(
+            bg_row,
+            values=BG_LABELS,
+            height=34,
+            command=self._on_bg_preset_selected,
+        )
+        self.bg_menu.set("☕ Coffee shop (Café ambience)")
+        self.bg_menu.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        self.bg_preview_btn = ctk.CTkButton(
+            bg_row,
+            text="🔊 Audition",
+            width=90,
+            height=34,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=self._toggle_bg_preview,
+        )
+        self.bg_preview_btn.grid(row=0, column=1)
+
+        # Ambience Volume Slider
+        self.bg_volume_label = ctk.CTkLabel(
+            bg_card,
+            text="Ambience Volume: 15% (Subtle background - Recommended)",
+            anchor="w",
+        )
+        self.bg_volume_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 2))
+
+        self.bg_volume_slider = ctk.CTkSlider(
+            bg_card,
+            from_=5,
+            to=45,
+            number_of_steps=40,
+            command=self._on_bg_volume_slider_changed,
+        )
+        self.bg_volume_slider.set(15)
+        self.bg_volume_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
+
+        # 3. Audio Customization Card (Speed & Pause)
         audio_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         audio_card.pack(fill="x", pady=(0, 12))
         audio_card.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             audio_card,
-            text="⚙️ Audio Customization",
+            text="⚙️ Speech Pace & Pauses",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 8))
@@ -319,7 +402,7 @@ class ConversationApp(ctk.CTk):
         self.pause_slider.set(500)
         self.pause_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
 
-        # 3. Output Destination Card
+        # 4. Output Destination Card
         dest_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         dest_card.pack(fill="x", pady=(0, 12))
         dest_card.grid_columnconfigure(0, weight=1)
@@ -341,7 +424,7 @@ class ConversationApp(ctk.CTk):
             placeholder_text="Select destination folder...",
             height=34,
         )
-        self.folder_entry.insert(0, self.default_destination)
+        self.folder_entry.insert(0, self.base_dir)
         self.folder_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(
@@ -366,7 +449,7 @@ class ConversationApp(ctk.CTk):
         self.filename_entry.insert(0, "conversation.mp3")
         self.filename_entry.grid(row=0, column=1, sticky="ew")
 
-        # 4. Generate Action & Progress Card
+        # 5. Generate Action & Progress Card
         action_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         action_card.pack(fill="x", pady=(0, 6))
         action_card.grid_columnconfigure(0, weight=1)
@@ -454,7 +537,7 @@ class ConversationApp(ctk.CTk):
 
         self.search_entry = ctk.CTkEntry(
             top_bar,
-            placeholder_text="🔍 Search past conversations by title, speaker, or date...",
+            placeholder_text="🔍 Search past conversations by title, speaker, ambience, or date...",
             height=36,
         )
         self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
@@ -480,11 +563,9 @@ class ConversationApp(ctk.CTk):
         return "📜 History"
 
     def _refresh_history_tab(self):
-        # Update tab label with item count
         entries = self.history_mgr.get_all()
         count = len(entries)
 
-        # Find and rename the history tab header safely
         try:
             for tab_name in list(self.tabview._name_list):
                 if "History" in tab_name:
@@ -509,14 +590,14 @@ class ConversationApp(ctk.CTk):
             title = e.get("title", "").lower()
             speakers_str = " ".join([s.get("name", "") for s in e.get("speakers", [])]).lower()
             date_str = e.get("created_at", "").lower()
+            bg_str = (e.get("background", {}) or {}).get("name", "").lower()
 
-            if query in title or query in speakers_str or query in date_str:
+            if query in title or query in speakers_str or query in date_str or query in bg_str:
                 filtered.append(e)
 
         self._render_history_items(filtered)
 
     def _render_history_items(self, entries):
-        # Clear existing cards
         for widget in self.history_scroll.winfo_children():
             widget.destroy()
 
@@ -535,7 +616,7 @@ class ConversationApp(ctk.CTk):
 
             ctk.CTkLabel(
                 empty_frame,
-                text="When you click 'Generate MP3' in the Studio, both the conversation text and the generated audio\nwill automatically be archived here for future playback and reference.",
+                text="When you click 'Generate MP3' in the Studio, both the conversation text and the generated audio\nwill automatically be archived here with their background sound settings for future playback.",
                 font=ctk.CTkFont(size=13),
                 text_color="#6B7280",
                 justify="center",
@@ -562,6 +643,7 @@ class ConversationApp(ctk.CTk):
         file_size_kb = entry.get("file_size_bytes", 0) / 1024
         audio_file = entry.get("audio_file", "")
         speakers = entry.get("speakers", [])
+        bg_info = entry.get("background")
 
         card = ctk.CTkFrame(
             self.history_scroll,
@@ -592,7 +674,7 @@ class ConversationApp(ctk.CTk):
         )
         date_lbl.grid(row=0, column=1, sticky="e")
 
-        # Metadata Row: Tags (Duration, Size, Lines, Speakers)
+        # Metadata Row: Tags (Duration, Size, Lines, Speakers, Ambience)
         meta_row = ctk.CTkFrame(card, fg_color="transparent")
         meta_row.pack(fill="x", padx=14, pady=(0, 8))
 
@@ -605,7 +687,14 @@ class ConversationApp(ctk.CTk):
 
         speakers_text = " • ".join(speakers_desc) if speakers_desc else "Dialogue"
 
-        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   📝 {lines_count} lines   |   👥 {speakers_text}"
+        bg_text = "🚫 Pure Speech"
+        if bg_info and isinstance(bg_info, dict):
+            bg_name = bg_info.get("name", "").split("(")[0].strip()
+            bg_vol = bg_info.get("volume", 15)
+            if bg_name and "None" not in bg_name:
+                bg_text = f"🎶 {bg_name} ({bg_vol}%)"
+
+        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   📝 {lines_count} lines   |   👥 {speakers_text}   |   {bg_text}"
         ctk.CTkLabel(
             meta_row,
             text=meta_text,
@@ -689,9 +778,7 @@ class ConversationApp(ctk.CTk):
 
     def _on_playback_finished(self):
         self.playing_file_path = None
-        # Reset studio play button
         self.play_btn.configure(text="▶️ Play Audio", fg_color="#4F46E5", hover_color="#4338CA")
-        # Reset all history play buttons
         for btn in self.history_play_buttons.values():
             try:
                 btn.configure(text="▶️ Play", fg_color="#4F46E5", hover_color="#4338CA")
@@ -699,6 +786,10 @@ class ConversationApp(ctk.CTk):
                 pass
 
     def _load_history_to_studio(self, entry_id):
+        entry = self.history_mgr.get_entry(entry_id)
+        if not entry:
+            return
+
         text = self.history_mgr.get_text(entry_id)
         if not text:
             messagebox.showwarning("Error", "Could not load conversation text.")
@@ -707,6 +798,16 @@ class ConversationApp(ctk.CTk):
         self.text_editor.delete("1.0", "end")
         self.text_editor.insert("1.0", text)
         self._on_text_changed()
+
+        # Restore background ambience if available
+        bg_meta = entry.get("background")
+        if bg_meta and isinstance(bg_meta, dict):
+            bg_name = bg_meta.get("name")
+            if bg_name in BG_LABELS:
+                self.bg_menu.set(bg_name)
+            bg_vol = bg_meta.get("volume", 15)
+            self.bg_volume_slider.set(bg_vol)
+            self._on_bg_volume_slider_changed(bg_vol)
 
         # Switch to Studio tab
         self.tabview.set("🎙️ Studio")
@@ -717,9 +818,102 @@ class ConversationApp(ctk.CTk):
             self.history_mgr.delete(entry_id)
             self._refresh_history_tab()
 
+    # ------------------ Background Ambience Handlers ------------------
+    def _on_bg_preset_selected(self, choice):
+        self._stop_bg_preview()
+        if choice == "📁 Custom audio file...":
+            chosen_file = filedialog.askopenfilename(
+                title="Select Custom Background Audio",
+                filetypes=[
+                    ("Audio Files", "*.mp3 *.wav *.m4a *.ogg *.flac *.aac"),
+                    ("All Files", "*.*"),
+                ],
+                initialdir=self.base_dir,
+            )
+            if chosen_file:
+                self.custom_bg_path = chosen_file
+                self.status_label.configure(
+                    text=f"Selected custom background: {os.path.basename(chosen_file)}",
+                    text_color="#60A5FA",
+                )
+            else:
+                self.bg_menu.set("🚫 None (Pure speech)")
+                self.custom_bg_path = None
+        else:
+            self.custom_bg_path = None
+            self.status_label.configure(
+                text=f"Selected ambience: {choice.split('(')[0].strip()}",
+                text_color="#60A5FA",
+            )
+
+    def _on_bg_volume_slider_changed(self, value):
+        val = int(value)
+        desc = "Subtle background (Recommended)" if 10 <= val <= 20 else ("Very soft" if val < 10 else "Noticeable atmosphere")
+        self.bg_volume_label.configure(text=f"Ambience Volume: {val}% ({desc})")
+
+    def _toggle_bg_preview(self):
+        if self.bg_preview_process and self.bg_preview_process.poll() is None:
+            self._stop_bg_preview()
+        else:
+            self._start_bg_preview()
+
+    def _start_bg_preview(self):
+        bg_path = self._get_selected_bg_path()
+        if not bg_path or not os.path.exists(bg_path):
+            messagebox.showinfo("Ambience Preview", "Please select an ambient background first (e.g. Coffee shop, Car, Office).")
+            return
+
+        self._stop_playback()
+        self._stop_bg_preview()
+
+        self.bg_preview_btn.configure(text="⏹️ Stop", fg_color="#DC2626", hover_color="#B91C1C")
+        vol_pct = int(self.bg_volume_slider.get())
+        self.status_label.configure(text=f"Auditioning background ambience at {vol_pct}% volume...", text_color="#60A5FA")
+
+        def _preview():
+            import tempfile
+            from pydub import AudioSegment
+
+            try:
+                raw_bg = AudioSegment.from_file(bg_path)[:6000]  # 6 second sample
+                ratio = max(0.01, min(1.0, vol_pct / 100.0))
+                volume_db = 20 * math.log10(ratio) - 4
+                sample = (raw_bg + volume_db).fade_in(500).fade_out(1000)
+
+                temp_f = tempfile.mktemp(suffix=".mp3")
+                sample.export(temp_f, format="mp3")
+
+                self.bg_preview_process = subprocess.Popen(["afplay", temp_f])
+                self.bg_preview_process.wait()
+
+                if os.path.exists(temp_f):
+                    os.remove(temp_f)
+            except Exception as e:
+                print("Preview error:", e)
+            finally:
+                self.after(0, self._stop_bg_preview)
+
+        threading.Thread(target=_preview, daemon=True).start()
+
+    def _stop_bg_preview(self):
+        if self.bg_preview_process and self.bg_preview_process.poll() is None:
+            self.bg_preview_process.terminate()
+            self.bg_preview_process = None
+        self.bg_preview_btn.configure(text="🔊 Audition", fg_color="#334155", hover_color="#475569")
+        self.status_label.configure(text="Ready to generate audio", text_color="#9CA3AF")
+
+    def _get_selected_bg_path(self):
+        choice = self.bg_menu.get()
+        if choice == "📁 Custom audio file...":
+            return self.custom_bg_path
+        rel_path = BG_LABEL_TO_PATH.get(choice)
+        if rel_path:
+            return os.path.join(self.base_dir, rel_path)
+        return None
+
     # ------------------ Text Editor Handlers ------------------
     def _load_initial_text(self):
-        conv_path = os.path.join(self.default_destination, "conversation.txt")
+        conv_path = os.path.join(self.base_dir, "conversation.txt")
         if os.path.exists(conv_path):
             with open(conv_path, "r", encoding="utf-8") as f:
                 self.text_editor.insert("1.0", f.read())
@@ -749,7 +943,7 @@ class ConversationApp(ctk.CTk):
         file_path = filedialog.askopenfilename(
             title="Open Conversation Text File",
             filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
-            initialdir=self.folder_entry.get().strip() or self.default_destination,
+            initialdir=self.folder_entry.get().strip() or self.base_dir,
         )
         if file_path:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -974,7 +1168,7 @@ class ConversationApp(ctk.CTk):
     def _browse_destination_folder(self):
         chosen = filedialog.askdirectory(
             title="Select Output Folder",
-            initialdir=self.folder_entry.get().strip() or self.default_destination,
+            initialdir=self.folder_entry.get().strip() or self.base_dir,
         )
         if chosen:
             self.folder_entry.delete(0, "end")
@@ -1020,6 +1214,15 @@ class ConversationApp(ctk.CTk):
         rate_str = f"{'+' if rate_val > 0 else ''}{rate_val}%"
         pause_ms = int(self.pause_slider.get())
 
+        # Ambient background settings
+        bg_path = self._get_selected_bg_path()
+        bg_vol = int(self.bg_volume_slider.get())
+        bg_meta = {
+            "name": self.bg_menu.get(),
+            "volume": bg_vol,
+            "path": bg_path,
+        }
+
         # Set UI to running state
         self.is_generating = True
         self.cancel_requested = False
@@ -1031,11 +1234,12 @@ class ConversationApp(ctk.CTk):
 
         # Stop any ongoing playback
         self._stop_playback()
+        self._stop_bg_preview()
 
         # Run background thread
         thread = threading.Thread(
             target=self._run_generation_thread,
-            args=(text, voice_map, full_output_path, rate_str, pause_ms, speakers_meta),
+            args=(text, voice_map, full_output_path, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta),
             daemon=True,
         )
         thread.start()
@@ -1045,7 +1249,7 @@ class ConversationApp(ctk.CTk):
             self.cancel_requested = True
             self.status_label.configure(text="Cancelling generation...", text_color="#EF4444")
 
-    def _run_generation_thread(self, text, voice_map, output_file, rate_str, pause_ms, speakers_meta):
+    def _run_generation_thread(self, text, voice_map, output_file, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta):
         def progress_callback(status_msg, progress_fraction):
             self.after(
                 0,
@@ -1066,6 +1270,8 @@ class ConversationApp(ctk.CTk):
                     output_file=output_file,
                     rate=rate_str,
                     pause_ms=pause_ms,
+                    background_path=bg_path,
+                    background_volume=bg_vol,
                     progress_callback=progress_callback,
                     is_cancelled=is_cancelled,
                 )
@@ -1078,6 +1284,7 @@ class ConversationApp(ctk.CTk):
                     audio_source_path=output_file,
                     duration_sec=result["duration_sec"],
                     speakers_meta=speakers_meta,
+                    background_meta=bg_meta,
                 )
         except Exception as e:
             error_message = str(e)
@@ -1136,6 +1343,7 @@ class ConversationApp(ctk.CTk):
 
     def _start_playback(self, file_path):
         self._stop_playback()
+        self._stop_bg_preview()
         self.playing_file_path = file_path
         self.play_btn.configure(text="⏹️ Stop", fg_color="#DC2626", hover_color="#B91C1C")
 

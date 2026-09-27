@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os
 import re
 import sys
@@ -103,21 +104,59 @@ async def generate_speech_parts(
     return audio_files, temp_dir
 
 
+def mix_background_audio(
+    speech_audio: AudioSegment,
+    background_path: str,
+    volume_percent: int = 15,
+) -> AudioSegment:
+    """
+    Mix background ambience into speech audio.
+    - Loops background audio seamlessly if speech is longer.
+    - Scales volume relative to speech (-15 to -25 dB).
+    - Applies smooth fade in and fade out.
+    """
+    if not background_path or not os.path.exists(background_path) or volume_percent <= 0:
+        return speech_audio
+
+    try:
+        bg = AudioSegment.from_file(background_path)
+    except Exception as e:
+        print(f"Warning: Could not load background audio '{background_path}': {e}")
+        return speech_audio
+
+    ratio = max(0.01, min(1.0, volume_percent / 100.0))
+    volume_db = 20 * math.log10(ratio) - 4
+    bg = bg + volume_db
+
+    target_duration_ms = len(speech_audio) + 500
+
+    if len(bg) < target_duration_ms:
+        loops_needed = (target_duration_ms // len(bg)) + 2
+        bg = (bg * loops_needed)[:target_duration_ms]
+    else:
+        bg = bg[:target_duration_ms]
+
+    bg = bg.fade_in(600).fade_out(1500)
+    return bg.overlay(speech_audio)
+
+
 def combine_audio_files(
     files,
     output_file: str,
     pause_ms: int = 500,
+    background_path: str = None,
+    background_volume: int = 15,
     progress_callback=None,
     is_cancelled=None,
 ):
     """
-    Combine individual MP3 files with a silence pause between speakers.
+    Combine individual MP3 files with a silence pause between speakers and optional ambient background.
     """
     if not files:
         raise ValueError("No audio parts to combine.")
 
     if progress_callback:
-        progress_callback("Merging audio clips and applying pause gaps...", 0.9)
+        progress_callback("Merging audio clips and applying pause gaps...", 0.88)
 
     final_audio = AudioSegment.empty()
     pause = AudioSegment.silent(duration=max(0, pause_ms))
@@ -132,12 +171,22 @@ def combine_audio_files(
         if idx < total - 1:  # Don't add pause at the very end
             final_audio += pause
 
+    # Mix background audio if provided
+    if background_path and os.path.exists(background_path) and background_volume > 0:
+        if progress_callback:
+            progress_callback("Mixing ambient background audio...", 0.93)
+        final_audio = mix_background_audio(
+            final_audio,
+            background_path=background_path,
+            volume_percent=background_volume,
+        )
+
     output_dir = os.path.dirname(os.path.abspath(output_file))
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
 
     if progress_callback:
-        progress_callback("Exporting final MP3...", 0.95)
+        progress_callback("Exporting final MP3...", 0.96)
 
     final_audio.export(output_file, format="mp3", bitrate="192k")
 
@@ -178,11 +227,13 @@ async def convert_conversation(
     rate: str = "-10%",
     volume: str = "+0%",
     pause_ms: int = 500,
+    background_path: str = None,
+    background_volume: int = 15,
     progress_callback=None,
     is_cancelled=None,
 ):
     """
-    End-to-end conversion from raw text to combined MP3.
+    End-to-end conversion from raw text to combined MP3 with ambient sound mixing.
     """
     conversation = parse_conversation(text)
     if not conversation:
@@ -202,6 +253,8 @@ async def convert_conversation(
             audio_files,
             output_file=output_file,
             pause_ms=pause_ms,
+            background_path=background_path,
+            background_volume=background_volume,
             progress_callback=progress_callback,
             is_cancelled=is_cancelled,
         )

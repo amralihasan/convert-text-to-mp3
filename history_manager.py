@@ -42,6 +42,7 @@ class HistoryManager:
         audio_source_path: str,
         duration_sec: float,
         speakers_meta: list = None,
+        background_meta: dict = None,
         custom_title: str = None,
     ):
         """
@@ -88,6 +89,7 @@ class HistoryManager:
             "duration_sec": round(duration_sec, 1),
             "file_size_bytes": file_size_bytes,
             "speakers": speakers_meta or [],
+            "background": background_meta or None,
             "lines_count": total_lines,
             "original_destination": audio_source_path,
         }
@@ -115,6 +117,13 @@ class HistoryManager:
 
         return valid
 
+    def get_entry(self, entry_id: str):
+        """Get a single entry by id."""
+        for r in self.get_all():
+            if r["id"] == entry_id:
+                return r
+        return None
+
     def delete(self, entry_id: str):
         """Deletes an entry and its associated files."""
         records = self._load_index()
@@ -140,10 +149,8 @@ class HistoryManager:
 
     def get_text(self, entry_id: str) -> str:
         """Read the conversation text for an entry."""
-        records = self._load_index()
-        for r in records:
-            if r["id"] == entry_id:
-                if os.path.exists(r["text_file"]):
-                    with open(r["text_file"], "r", encoding="utf-8") as f:
-                        return f.read()
+        entry = self.get_entry(entry_id)
+        if entry and os.path.exists(entry["text_file"]):
+            with open(entry["text_file"], "r", encoding="utf-8") as f:
+                return f.read()
         return ""
