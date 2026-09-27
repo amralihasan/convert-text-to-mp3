@@ -6,19 +6,22 @@ A desktop application and CLI tool that converts conversational dialogue scripts
 
 ## ✨ Features
 
-- **📂 Dedicated Conversation Directory**:
-  - Automatically creates a new folder named after your conversation:
-    ```
-    Software_Project_Chat/
-    ├── full_conversation.mp3       (Full dialogue with background ambience)
-    ├── conversation.txt            (Full dialogue transcript)
-    └── sentences/                  (Separate MP3 for every sentence)
-        ├── 01_Ahmed_Hey_John_How_are_you.mp3
-        ├── 02_John_Hey_Ahmed_Im_doing_pretty.mp3
-        └── ...
-    ```
+- **🔄 2 Export Modes (Single MP3 vs Full Project Directory)**:
+  - **Option 1: 🎵 Single MP3 File**:
+    - Generates just one consolidated MP3 audio file directly in your target destination without creating extra directories or sub-files.
+  - **Option 2: 📁 Full Project Directory**:
+    - Automatically creates a dedicated folder named after your conversation:
+      ```
+      Software_Project_Chat/
+      ├── full_conversation.mp3       (Full dialogue with background ambience)
+      ├── conversation.txt            (Full dialogue transcript)
+      └── sentences/                  (Separate MP3 for every sentence)
+          ├── 01_Ahmed_Hey_John_How_are_you.mp3
+          ├── 02_John_Hey_Ahmed_Im_doing_pretty.mp3
+          └── ...
+      ```
 - **Modern Desktop UI with Tabs**:
-  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, scene background ambience, conversation directory naming, and audio generator.
+  - **🎙️ Studio Tab**: Interactive conversation editor, export mode switcher, dynamic speaker recognition, gender/voice selectors, scene background ambience, destination management, and audio generator.
   - **📜 History Library Tab**: Persistent archive of every generated conversation with an embedded audio player, sentence playback drawer, and management tools.
 - **☕ Scene Background Ambience (Soundscapes)**:
   - Add realistic environment sounds behind your dialogue to set the scene:
@@ -67,10 +70,13 @@ Or run via the virtual environment:
 
 ## 🛠️ CLI Usage
 
-Convert text files directly from your terminal and export to a named directory:
+Convert text files directly from your terminal in either mode:
 
 ```bash
-# Using default conversation.txt into a new conversation directory:
+# Option 1: Generate a single MP3 file (provide a target ending in .mp3)
+.venv/bin/python conversation_to_mp3.py conversation.txt output_conversation.mp3
+
+# Option 2: Generate a full project directory (with transcript and sentences folder)
 .venv/bin/python conversation_to_mp3.py conversation.txt My_Conversation_Folder
 ```
 

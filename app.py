@@ -163,7 +163,7 @@ class ConversationApp(ctk.CTk):
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="Generates a full conversation MP3 and individual sentence audio files inside a dedicated conversation folder",
+            text="Export full dialogues to a single MP3 or a complete project directory with individual sentence clips",
             font=ctk.CTkFont(size=12),
             text_color="gray",
             anchor="w",
@@ -404,44 +404,68 @@ class ConversationApp(ctk.CTk):
         self.pause_slider.set(500)
         self.pause_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
 
-        # 4. Output Destination Card (NEW: Dedicated Conversation Directory)
+        # 4. Output Destination Card (Switch: Single MP3 File vs Full Project Directory)
         dest_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         dest_card.pack(fill="x", pady=(0, 12))
         dest_card.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
+        self.dest_card_title = ctk.CTkLabel(
             dest_card,
-            text="📁 Output Conversation Directory",
+            text="📁 Export Mode & Destination",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 2))
+        )
+        self.dest_card_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 2))
 
-        ctk.CTkLabel(
+        self.dest_card_desc = ctk.CTkLabel(
             dest_card,
-            text="Creates a new directory named after the conversation containing full audio & sentence clips:",
+            text="Creates a dedicated folder containing the full dialogue MP3, transcript text file, and sentences folder:",
             font=ctk.CTkFont(size=12),
             text_color="#9CA3AF",
             anchor="w",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 8))
+        )
+        self.dest_card_desc.grid(row=1, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 8))
 
-        # Conversation Name / Directory Name Row
-        name_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        name_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
-        name_row.grid_columnconfigure(1, weight=1)
+        # Mode Selector (Segmented Button: Single MP3 vs Full Project Directory)
+        mode_row = ctk.CTkFrame(dest_card, fg_color="transparent")
+        mode_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 10))
+        mode_row.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(name_row, text="🏷️ Conversation Name:").grid(row=0, column=0, padx=(0, 8), sticky="w")
-        self.conv_name_entry = ctk.CTkEntry(
-            name_row,
+        self.export_mode_seg = ctk.CTkSegmentedButton(
+            mode_row,
+            values=["🎵 Single MP3 File", "📁 Full Project Directory"],
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=34,
+            selected_color="#4F46E5",
+            selected_hover_color="#4338CA",
+            command=self._on_export_mode_changed,
+        )
+        self.export_mode_seg.set("📁 Full Project Directory")
+        self.export_mode_seg.grid(row=0, column=0, sticky="ew")
+
+        # Name Row (Dynamic: File Name vs Conversation Name)
+        self.name_row = ctk.CTkFrame(dest_card, fg_color="transparent")
+        self.name_row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        self.name_row.grid_columnconfigure(1, weight=1)
+
+        self.target_name_label = ctk.CTkLabel(self.name_row, text="🏷️ Conversation Name:")
+        self.target_name_label.grid(row=0, column=0, padx=(0, 8), sticky="w")
+
+        self.target_name_entry = ctk.CTkEntry(
+            self.name_row,
             placeholder_text="e.g. Software_Project_Chat",
             height=34,
         )
-        self.conv_name_entry.insert(0, "Software_Project_Chat")
-        self.conv_name_entry.grid(row=0, column=1, sticky="ew")
-        self.conv_name_entry.bind("<KeyRelease>", lambda e: self._update_path_preview())
+        self.target_name_entry.insert(0, "Software_Project_Chat")
+        self.target_name_entry.grid(row=0, column=1, sticky="ew")
+        self.target_name_entry.bind("<KeyRelease>", lambda e: self._update_path_preview())
+
+        # Backwards compatibility alias
+        self.conv_name_entry = self.target_name_entry
 
         # Base Destination Folder Row
         folder_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        folder_row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        folder_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
         folder_row.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(folder_row, text="📁 Destination Folder:").grid(row=0, column=0, padx=(0, 8), sticky="w")
@@ -471,7 +495,7 @@ class ConversationApp(ctk.CTk):
             justify="left",
             anchor="w",
         )
-        self.path_preview_label.grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 12))
+        self.path_preview_label.grid(row=5, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 12))
         self._update_path_preview()
 
         # 5. Generate Action & Progress Card
@@ -481,7 +505,7 @@ class ConversationApp(ctk.CTk):
 
         self.generate_btn = ctk.CTkButton(
             action_card,
-            text="🚀 Generate Conversation & Sentences",
+            text="🚀 Generate Project Directory",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=46,
             fg_color="#10B981",
@@ -521,7 +545,7 @@ class ConversationApp(ctk.CTk):
 
         self.play_btn = ctk.CTkButton(
             self.result_frame,
-            text="▶️ Play Full Audio",
+            text="▶️ Play Audio",
             height=36,
             fg_color="#4F46E5",
             hover_color="#4338CA",
@@ -549,10 +573,53 @@ class ConversationApp(ctk.CTk):
 
         self.result_frame.grid_remove()  # Hide until generated
 
+    def _on_export_mode_changed(self, mode_val):
+        is_single = "Single" in mode_val
+        current_val = self.target_name_entry.get().strip()
+
+        if is_single:
+            self.dest_card_title.configure(text="🎵 Output MP3 Audio File")
+            self.dest_card_desc.configure(
+                text="Generates a single MP3 audio file containing the entire dialogue merged with background sound:"
+            )
+            self.target_name_label.configure(text="🎵 MP3 File Name:")
+            self.target_name_entry.configure(placeholder_text="e.g. conversation.mp3")
+            if not current_val.endswith(".mp3"):
+                sanitized = sanitize_directory_name(current_val) if current_val else "conversation"
+                self.target_name_entry.delete(0, "end")
+                self.target_name_entry.insert(0, f"{sanitized}.mp3")
+            self.generate_btn.configure(text="🚀 Generate Single MP3 File")
+        else:
+            self.dest_card_title.configure(text="📁 Output Project Directory")
+            self.dest_card_desc.configure(
+                text="Creates a dedicated folder containing the full dialogue MP3, transcript text file, and sentences folder:"
+            )
+            self.target_name_label.configure(text="🏷️ Conversation Name:")
+            self.target_name_entry.configure(placeholder_text="e.g. Software_Project_Chat")
+            if current_val.endswith(".mp3"):
+                clean_name = sanitize_directory_name(current_val[:-4])
+                self.target_name_entry.delete(0, "end")
+                self.target_name_entry.insert(0, clean_name or "Software_Project_Chat")
+            self.generate_btn.configure(text="🚀 Generate Project Directory")
+
+        self._update_path_preview()
+
     def _update_path_preview(self):
         base_dir = self.folder_entry.get().strip() or self.base_dir
-        conv_name = sanitize_directory_name(self.conv_name_entry.get().strip() or "Conversation")
-        preview = f"📂 {os.path.join(base_dir, conv_name)}/\n   ├── full_conversation.mp3\n   ├── conversation.txt\n   └── sentences/ (separate MP3 for each line)"
+        is_single = hasattr(self, "export_mode_seg") and ("Single" in self.export_mode_seg.get())
+        raw_name = self.target_name_entry.get().strip() if hasattr(self, "target_name_entry") else "conversation"
+
+        if is_single:
+            file_name = raw_name if raw_name else "conversation.mp3"
+            if not file_name.endswith(".mp3"):
+                file_name = f"{file_name}.mp3"
+            full_path = os.path.join(base_dir, file_name)
+            preview = f"🎵 File: {full_path}\n   └── Generates 1 consolidated MP3 file (no extra folders or sub-files)"
+        else:
+            conv_name = sanitize_directory_name(raw_name or "Conversation")
+            full_dir = os.path.join(base_dir, conv_name)
+            preview = f"📂 Folder: {full_dir}/\n   ├── full_conversation.mp3\n   ├── conversation.txt\n   └── sentences/ (separate MP3 for each line)"
+
         self.path_preview_label.configure(text=preview)
 
     # ------------------ History Tab Setup ------------------
@@ -688,14 +755,19 @@ class ConversationApp(ctk.CTk):
         card.pack(fill="x", pady=6, padx=4)
         card.grid_columnconfigure(0, weight=1)
 
-        # Header Row: Folder Name, Title & Date
+        mode = entry.get("mode", "project" if sentence_files else "single")
+        is_single = (mode == "single")
+
+        # Header Row: Folder Name / File Name, Title & Date
         hdr_row = ctk.CTkFrame(card, fg_color="transparent")
         hdr_row.pack(fill="x", padx=14, pady=(10, 4))
         hdr_row.grid_columnconfigure(0, weight=1)
 
+        display_name = os.path.basename(entry.get("original_destination", audio_file)) if is_single else conv_name
+        icon = "🎵" if is_single else "📁"
         title_lbl = ctk.CTkLabel(
             hdr_row,
-            text=f"📁 {conv_name}  •  {title}",
+            text=f"{icon} {display_name}  •  {title}",
             font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w",
         )
@@ -729,7 +801,8 @@ class ConversationApp(ctk.CTk):
             if bg_name and "None" not in bg_name:
                 bg_text = f"🎶 {bg_name} ({bg_vol}%)"
 
-        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   🗣️ {lines_count} Sentences + Full MP3   |   {bg_text}"
+        mode_badge = "🎵 Single MP3 File" if is_single else f"🗣️ {lines_count} Sentences + Full MP3"
+        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   {mode_badge}   |   {bg_text}"
         ctk.CTkLabel(
             meta_row,
             text=meta_text,
@@ -919,12 +992,23 @@ class ConversationApp(ctk.CTk):
         self.text_editor.insert("1.0", text)
         self._on_text_changed()
 
-        # Restore conversation name if saved
-        conv_name = entry.get("conversation_name")
-        if conv_name:
-            self.conv_name_entry.delete(0, "end")
-            self.conv_name_entry.insert(0, conv_name)
-            self._update_path_preview()
+        # Restore export mode and target name
+        mode = entry.get("mode", "project" if entry.get("sentence_files") else "single")
+        is_single = (mode == "single")
+        mode_str = "🎵 Single MP3 File" if is_single else "📁 Full Project Directory"
+        self.export_mode_seg.set(mode_str)
+        self._on_export_mode_changed(mode_str)
+
+        self.target_name_entry.delete(0, "end")
+        if is_single:
+            orig = entry.get("original_destination")
+            fname = os.path.basename(orig) if orig else f"{entry.get('conversation_name', 'conversation')}.mp3"
+            self.target_name_entry.insert(0, fname)
+        else:
+            conv_name = entry.get("conversation_name") or "Software_Project_Chat"
+            self.target_name_entry.insert(0, conv_name)
+
+        self._update_path_preview()
 
         # Restore background ambience if available
         bg_meta = entry.get("background")
@@ -1076,10 +1160,14 @@ class ConversationApp(ctk.CTk):
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 self.text_editor.delete("1.0", "end")
                 self.text_editor.insert("1.0", f.read())
-            # Auto-suggest conversation name from file name
+            # Auto-suggest file name or directory name depending on active mode
             base_name = os.path.splitext(os.path.basename(file_path))[0]
-            self.conv_name_entry.delete(0, "end")
-            self.conv_name_entry.insert(0, sanitize_directory_name(base_name))
+            is_single = "Single" in self.export_mode_seg.get()
+            self.target_name_entry.delete(0, "end")
+            if is_single:
+                self.target_name_entry.insert(0, f"{sanitize_directory_name(base_name)}.mp3")
+            else:
+                self.target_name_entry.insert(0, sanitize_directory_name(base_name))
             self._update_path_preview()
             self._on_text_changed()
 
@@ -1322,8 +1410,21 @@ class ConversationApp(ctk.CTk):
             messagebox.showwarning("Missing Destination", "Please choose a destination folder.")
             return
 
-        conv_name = sanitize_directory_name(self.conv_name_entry.get().strip() or "Conversation")
-        target_dir = os.path.join(base_folder, conv_name)
+        is_single = "Single" in self.export_mode_seg.get()
+        mode = "single" if is_single else "project"
+        raw_target_name = self.target_name_entry.get().strip()
+
+        if is_single:
+            file_name = raw_target_name if raw_target_name else "conversation.mp3"
+            if not file_name.endswith(".mp3"):
+                file_name = f"{file_name}.mp3"
+            target_single_file = os.path.join(base_folder, file_name)
+            target_dir = base_folder
+            conv_name = os.path.splitext(file_name)[0]
+        else:
+            conv_name = sanitize_directory_name(raw_target_name or "Conversation")
+            target_dir = os.path.join(base_folder, conv_name)
+            target_single_file = None
 
         # Build voice map and speakers metadata for history
         voice_map = {}
@@ -1367,7 +1468,7 @@ class ConversationApp(ctk.CTk):
         # Run background thread
         thread = threading.Thread(
             target=self._run_generation_thread,
-            args=(text, voice_map, target_dir, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta),
+            args=(text, voice_map, mode, target_dir, target_single_file, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta),
             daemon=True,
         )
         thread.start()
@@ -1377,7 +1478,7 @@ class ConversationApp(ctk.CTk):
             self.cancel_requested = True
             self.status_label.configure(text="Cancelling generation...", text_color="#EF4444")
 
-    def _run_generation_thread(self, text, voice_map, target_dir, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta):
+    def _run_generation_thread(self, text, voice_map, mode, target_dir, target_single_file, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta):
         def progress_callback(status_msg, progress_fraction):
             self.after(
                 0,
@@ -1395,8 +1496,10 @@ class ConversationApp(ctk.CTk):
                 convert_conversation(
                     text=text,
                     voice_map=voice_map,
+                    mode=mode,
                     output_dir=target_dir,
                     conversation_name=conv_name,
+                    single_output_file=target_single_file,
                     rate=rate_str,
                     pause_ms=pause_ms,
                     background_path=bg_path,
@@ -1415,7 +1518,8 @@ class ConversationApp(ctk.CTk):
                     speakers_meta=speakers_meta,
                     background_meta=bg_meta,
                     conversation_dir=result["conversation_dir"],
-                    sentence_files=result["sentence_files"],
+                    sentence_files=result.get("sentence_files", []),
+                    mode=result.get("mode", mode),
                 )
         except Exception as e:
             error_message = str(e)
@@ -1431,7 +1535,9 @@ class ConversationApp(ctk.CTk):
 
     def _finish_generation_ui(self, result, error_message):
         self.is_generating = False
-        self.generate_btn.configure(state="normal", text="🚀 Generate Conversation & Sentences")
+        is_single = "Single" in self.export_mode_seg.get()
+        default_btn_text = "🚀 Generate Single MP3 File" if is_single else "🚀 Generate Project Directory"
+        self.generate_btn.configure(state="normal", text=default_btn_text)
         self.cancel_btn.grid_remove()
 
         if error_message:
@@ -1446,11 +1552,20 @@ class ConversationApp(ctk.CTk):
             self.last_generated_full_file = result["full_audio_file"]
             self.progress_bar.set(1.0)
             dur = result["duration_sec"]
-            n_sentences = len(result["sentence_files"])
-            self.status_label.configure(
-                text=f"🎉 Created '{os.path.basename(result['conversation_dir'])}' (Full MP3 {dur:.1f}s + {n_sentences} Sentence MP3s)",
-                text_color="#10B981",
-            )
+
+            if result.get("mode") == "single":
+                file_name = os.path.basename(result["full_audio_file"])
+                kb = result["file_size_bytes"] / 1024
+                self.status_label.configure(
+                    text=f"🎉 Created '{file_name}' (Single MP3 • {dur:.1f}s • {kb:.1f} KB)",
+                    text_color="#10B981",
+                )
+            else:
+                n_sentences = len(result.get("sentence_files", []))
+                self.status_label.configure(
+                    text=f"🎉 Created '{os.path.basename(result['conversation_dir'])}' (Full MP3 {dur:.1f}s + {n_sentences} Sentence MP3s)",
+                    text_color="#10B981",
+                )
             self.result_frame.grid()
             # Refresh history tab content
             self._refresh_history_tab()

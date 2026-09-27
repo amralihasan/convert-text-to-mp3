@@ -46,6 +46,7 @@ class HistoryManager:
         conversation_dir: str = None,
         sentence_files: list = None,
         custom_title: str = None,
+        mode: str = "project",
     ):
         """
         Saves a conversation text, full MP3, and sentence files into persistent history.
@@ -86,6 +87,7 @@ class HistoryManager:
             "id": entry_id,
             "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
             "title": title,
+            "mode": mode,
             "conversation_dir": conversation_dir or os.path.dirname(audio_source_path),
             "conversation_name": os.path.basename(conversation_dir) if conversation_dir else "Conversation",
             "text_file": text_dest,
