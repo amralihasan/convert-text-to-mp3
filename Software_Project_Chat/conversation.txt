@@ -1,0 +1,27 @@
+Tom: Hey, John! How are you doing today?
+
+John: Hey, Tom! I'm doing pretty well. How about you?
+
+Tom: I'm good, thanks. What are you working on these days?
+
+John: I'm working on a new software project. It's a little difficult, but I'm enjoying it.
+
+Tom: That sounds interesting. What kind of software are you building?
+
+John: It's a small project management system. I'm building the backend with Laravel.
+
+Tom: Nice! How long have you been working on it?
+
+John: About two months. I'm hoping to finish the first version next month.
+
+Tom: That's great. Are you working on it alone?
+
+John: Mostly, yes. But sometimes I ask a friend to help me with the frontend.
+
+Tom: That's a good idea. Building a project alone can be challenging.
+
+John: Exactly. But I'm learning a lot from it.
+
+Tom: That's what matters. Keep going!
+
+John: Thanks! I really appreciate that.
