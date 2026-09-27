@@ -11,6 +11,7 @@ from conversation_to_mp3 import (
     parse_conversation,
     extract_speakers,
     convert_conversation,
+    sanitize_directory_name,
     FALLBACK_VOICE,
 )
 from history_manager import HistoryManager
@@ -114,7 +115,7 @@ class ConversationApp(ctk.CTk):
 
         # Window Configuration
         self.title("Conversation to MP3 Studio")
-        self.geometry("1150 x 840")
+        self.geometry("1160 x 860")
         self.minsize(980, 720)
 
         # Base directory
@@ -130,8 +131,9 @@ class ConversationApp(ctk.CTk):
         self.last_detected_speakers = []
         self.current_player_process = None
         self.playing_file_path = None
-        self.last_generated_file = None
-        self.history_play_buttons = {}  # entry_id -> button widget
+        self.last_generated_dir = None
+        self.last_generated_full_file = None
+        self.history_play_buttons = {}  # file_path -> button widget
 
         # Custom background audio path if chosen
         self.custom_bg_path = None
@@ -161,7 +163,7 @@ class ConversationApp(ctk.CTk):
 
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="Generate realistic dialogues with neural voices & atmospheric background ambience (Café, Car, Office, Park)",
+            text="Generates a full conversation MP3 and individual sentence audio files inside a dedicated conversation folder",
             font=ctk.CTkFont(size=12),
             text_color="gray",
             anchor="w",
@@ -299,7 +301,7 @@ class ConversationApp(ctk.CTk):
         self.speakers_container.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
         self.speakers_container.grid_columnconfigure(0, weight=1)
 
-        # 2. Ambient Background Card (NEW!)
+        # 2. Ambient Background Card
         bg_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         bg_card.pack(fill="x", pady=(0, 12))
         bg_card.grid_columnconfigure(0, weight=1)
@@ -402,30 +404,55 @@ class ConversationApp(ctk.CTk):
         self.pause_slider.set(500)
         self.pause_slider.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
 
-        # 4. Output Destination Card
+        # 4. Output Destination Card (NEW: Dedicated Conversation Directory)
         dest_card = ctk.CTkFrame(right_scroll, corner_radius=10)
         dest_card.pack(fill="x", pady=(0, 12))
         dest_card.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
             dest_card,
-            text="📁 Destination & Filename",
+            text="📁 Output Conversation Directory",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 6))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 2))
 
-        # Folder row
+        ctk.CTkLabel(
+            dest_card,
+            text="Creates a new directory named after the conversation containing full audio & sentence clips:",
+            font=ctk.CTkFont(size=12),
+            text_color="#9CA3AF",
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 8))
+
+        # Conversation Name / Directory Name Row
+        name_row = ctk.CTkFrame(dest_card, fg_color="transparent")
+        name_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        name_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(name_row, text="🏷️ Conversation Name:").grid(row=0, column=0, padx=(0, 8), sticky="w")
+        self.conv_name_entry = ctk.CTkEntry(
+            name_row,
+            placeholder_text="e.g. Software_Project_Chat",
+            height=34,
+        )
+        self.conv_name_entry.insert(0, "Software_Project_Chat")
+        self.conv_name_entry.grid(row=0, column=1, sticky="ew")
+        self.conv_name_entry.bind("<KeyRelease>", lambda e: self._update_path_preview())
+
+        # Base Destination Folder Row
         folder_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        folder_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
-        folder_row.grid_columnconfigure(0, weight=1)
+        folder_row.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+        folder_row.grid_columnconfigure(1, weight=1)
 
+        ctk.CTkLabel(folder_row, text="📁 Destination Folder:").grid(row=0, column=0, padx=(0, 8), sticky="w")
         self.folder_entry = ctk.CTkEntry(
             folder_row,
             placeholder_text="Select destination folder...",
             height=34,
         )
         self.folder_entry.insert(0, self.base_dir)
-        self.folder_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.folder_entry.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.folder_entry.bind("<KeyRelease>", lambda e: self._update_path_preview())
 
         ctk.CTkButton(
             folder_row,
@@ -433,21 +460,19 @@ class ConversationApp(ctk.CTk):
             width=85,
             height=34,
             command=self._browse_destination_folder,
-        ).grid(row=0, column=1)
+        ).grid(row=0, column=2)
 
-        # Filename row
-        file_row = ctk.CTkFrame(dest_card, fg_color="transparent")
-        file_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
-        file_row.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(file_row, text="File Name:").grid(row=0, column=0, padx=(0, 8))
-        self.filename_entry = ctk.CTkEntry(
-            file_row,
-            placeholder_text="conversation.mp3",
-            height=34,
+        # Output preview label
+        self.path_preview_label = ctk.CTkLabel(
+            dest_card,
+            text="",
+            font=ctk.CTkFont(family="Menlo", size=11),
+            text_color="#38BDF8",
+            justify="left",
+            anchor="w",
         )
-        self.filename_entry.insert(0, "conversation.mp3")
-        self.filename_entry.grid(row=0, column=1, sticky="ew")
+        self.path_preview_label.grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(0, 12))
+        self._update_path_preview()
 
         # 5. Generate Action & Progress Card
         action_card = ctk.CTkFrame(right_scroll, corner_radius=10)
@@ -456,7 +481,7 @@ class ConversationApp(ctk.CTk):
 
         self.generate_btn = ctk.CTkButton(
             action_card,
-            text="🚀 Generate MP3",
+            text="🚀 Generate Conversation & Sentences",
             font=ctk.CTkFont(size=16, weight="bold"),
             height=46,
             fg_color="#10B981",
@@ -487,7 +512,7 @@ class ConversationApp(ctk.CTk):
         )
         self.status_label.grid(row=2, column=0, sticky="w", padx=14, pady=(0, 12))
 
-        # Result actions (Open in Finder / Play Audio / View in History)
+        # Result actions (Open Folder / Play Full Audio / View in History)
         self.result_frame = ctk.CTkFrame(action_card, fg_color="transparent")
         self.result_frame.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
         self.result_frame.grid_columnconfigure(0, weight=1)
@@ -496,7 +521,7 @@ class ConversationApp(ctk.CTk):
 
         self.play_btn = ctk.CTkButton(
             self.result_frame,
-            text="▶️ Play Audio",
+            text="▶️ Play Full Audio",
             height=36,
             fg_color="#4F46E5",
             hover_color="#4338CA",
@@ -506,7 +531,7 @@ class ConversationApp(ctk.CTk):
 
         self.open_finder_btn = ctk.CTkButton(
             self.result_frame,
-            text="📂 In Finder",
+            text="📂 Open Folder",
             height=36,
             command=self._open_in_finder,
         )
@@ -522,7 +547,13 @@ class ConversationApp(ctk.CTk):
         )
         self.view_history_btn.grid(row=0, column=2, sticky="ew", padx=(4, 0))
 
-        self.result_frame.grid_remove()  # Hide until MP3 is generated
+        self.result_frame.grid_remove()  # Hide until generated
+
+    def _update_path_preview(self):
+        base_dir = self.folder_entry.get().strip() or self.base_dir
+        conv_name = sanitize_directory_name(self.conv_name_entry.get().strip() or "Conversation")
+        preview = f"📂 {os.path.join(base_dir, conv_name)}/\n   ├── full_conversation.mp3\n   ├── conversation.txt\n   └── sentences/ (separate MP3 for each line)"
+        self.path_preview_label.configure(text=preview)
 
     # ------------------ History Tab Setup ------------------
     def _setup_history_tab(self):
@@ -537,7 +568,7 @@ class ConversationApp(ctk.CTk):
 
         self.search_entry = ctk.CTkEntry(
             top_bar,
-            placeholder_text="🔍 Search past conversations by title, speaker, ambience, or date...",
+            placeholder_text="🔍 Search past conversations by name, speaker, ambience, or date...",
             height=36,
         )
         self.search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
@@ -588,11 +619,12 @@ class ConversationApp(ctk.CTk):
         filtered = []
         for e in all_entries:
             title = e.get("title", "").lower()
+            conv_name = e.get("conversation_name", "").lower()
             speakers_str = " ".join([s.get("name", "") for s in e.get("speakers", [])]).lower()
             date_str = e.get("created_at", "").lower()
             bg_str = (e.get("background", {}) or {}).get("name", "").lower()
 
-            if query in title or query in speakers_str or query in date_str or query in bg_str:
+            if query in title or query in conv_name or query in speakers_str or query in date_str or query in bg_str:
                 filtered.append(e)
 
         self._render_history_items(filtered)
@@ -616,7 +648,7 @@ class ConversationApp(ctk.CTk):
 
             ctk.CTkLabel(
                 empty_frame,
-                text="When you click 'Generate MP3' in the Studio, both the conversation text and the generated audio\nwill automatically be archived here with their background sound settings for future playback.",
+                text="When you click 'Generate Conversation & Sentences' in the Studio, both the full conversation\nand separate sentence audio files will be organized and archived here.",
                 font=ctk.CTkFont(size=13),
                 text_color="#6B7280",
                 justify="center",
@@ -637,11 +669,14 @@ class ConversationApp(ctk.CTk):
     def _create_history_card(self, entry):
         entry_id = entry["id"]
         title = entry.get("title", "Conversation")
+        conv_name = entry.get("conversation_name", "Conversation")
+        conv_dir = entry.get("conversation_dir", "")
         created_at = entry.get("created_at", "")
         duration_sec = entry.get("duration_sec", 0)
         lines_count = entry.get("lines_count", 0)
         file_size_kb = entry.get("file_size_bytes", 0) / 1024
         audio_file = entry.get("audio_file", "")
+        sentence_files = entry.get("sentence_files", [])
         speakers = entry.get("speakers", [])
         bg_info = entry.get("background")
 
@@ -653,14 +688,14 @@ class ConversationApp(ctk.CTk):
         card.pack(fill="x", pady=6, padx=4)
         card.grid_columnconfigure(0, weight=1)
 
-        # Header Row: Title & Date
+        # Header Row: Folder Name, Title & Date
         hdr_row = ctk.CTkFrame(card, fg_color="transparent")
         hdr_row.pack(fill="x", padx=14, pady=(10, 4))
         hdr_row.grid_columnconfigure(0, weight=1)
 
         title_lbl = ctk.CTkLabel(
             hdr_row,
-            text=f"💬 {title}",
+            text=f"📁 {conv_name}  •  {title}",
             font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w",
         )
@@ -694,7 +729,7 @@ class ConversationApp(ctk.CTk):
             if bg_name and "None" not in bg_name:
                 bg_text = f"🎶 {bg_name} ({bg_vol}%)"
 
-        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   📝 {lines_count} lines   |   👥 {speakers_text}   |   {bg_text}"
+        meta_text = f"⏱️ {duration_sec:.1f}s   |   💾 {file_size_kb:.1f} KB   |   🗣️ {lines_count} Sentences + Full MP3   |   {bg_text}"
         ctk.CTkLabel(
             meta_row,
             text=meta_text,
@@ -708,21 +743,33 @@ class ConversationApp(ctk.CTk):
         action_row.pack(fill="x", padx=14, pady=(0, 10))
 
         is_playing_this = (self.playing_file_path == audio_file and self.current_player_process and self.current_player_process.poll() is None)
-        play_text = "⏹️ Stop" if is_playing_this else "▶️ Play"
+        play_text = "⏹️ Stop" if is_playing_this else "▶️ Play Full"
         play_color = "#DC2626" if is_playing_this else "#4F46E5"
         play_hover = "#B91C1C" if is_playing_this else "#4338CA"
 
         play_btn = ctk.CTkButton(
             action_row,
             text=play_text,
-            width=80,
+            width=90,
             height=28,
             fg_color=play_color,
             hover_color=play_hover,
             command=lambda aid=entry_id, apath=audio_file: self._toggle_history_playback(aid, apath),
         )
         play_btn.pack(side="left", padx=(0, 6))
-        self.history_play_buttons[entry_id] = play_btn
+        self.history_play_buttons[audio_file] = play_btn
+
+        # Open Folder in Finder
+        target_dir = conv_dir if (conv_dir and os.path.exists(conv_dir)) else os.path.dirname(audio_file)
+        ctk.CTkButton(
+            action_row,
+            text="📂 Open Folder",
+            width=100,
+            height=28,
+            fg_color="#334155",
+            hover_color="#475569",
+            command=lambda p=target_dir: subprocess.run(["open", p]),
+        ).pack(side="left", padx=4)
 
         ctk.CTkButton(
             action_row,
@@ -732,15 +779,54 @@ class ConversationApp(ctk.CTk):
             command=lambda eid=entry_id: self._load_history_to_studio(eid),
         ).pack(side="left", padx=4)
 
-        ctk.CTkButton(
-            action_row,
-            text="📂 In Finder",
-            width=85,
-            height=28,
-            fg_color="#334155",
-            hover_color="#475569",
-            command=lambda p=audio_file: subprocess.run(["open", "-R", p]),
-        ).pack(side="left", padx=4)
+        # Expand Sentences Accordion / Drawer
+        if sentence_files:
+            sentences_toggle_btn = ctk.CTkButton(
+                action_row,
+                text=f"🎧 Sentences ({len(sentence_files)}) ▾",
+                width=125,
+                height=28,
+                fg_color="#0D9488",
+                hover_color="#0F766E",
+            )
+            sentences_toggle_btn.pack(side="left", padx=4)
+
+            # Sub-frame for individual sentences (initially hidden)
+            sentences_frame = ctk.CTkFrame(card, fg_color=("#E5E7EB", "#0F172A"), corner_radius=8)
+            sentences_toggle_btn.configure(
+                command=lambda sf=sentences_frame, btn=sentences_toggle_btn, n=len(sentence_files): self._toggle_sentences_drawer(sf, btn, n)
+            )
+
+            # Populate sentence rows inside sub-frame
+            for s_rec in sentence_files:
+                s_idx = s_rec.get("index", 1)
+                s_spk = s_rec.get("speaker", "")
+                s_txt = s_rec.get("text", "")
+                s_path = s_rec.get("file_path", "")
+
+                s_row = ctk.CTkFrame(sentences_frame, fg_color="transparent")
+                s_row.pack(fill="x", padx=10, pady=3)
+                s_row.grid_columnconfigure(1, weight=1)
+
+                s_play_btn = ctk.CTkButton(
+                    s_row,
+                    text="▶️",
+                    width=32,
+                    height=24,
+                    fg_color="#4F46E5",
+                    hover_color="#4338CA",
+                    command=lambda p=s_path: self._play_single_sentence(p),
+                )
+                s_play_btn.grid(row=0, column=0, padx=(0, 6))
+                self.history_play_buttons[s_path] = s_play_btn
+
+                s_lbl = ctk.CTkLabel(
+                    s_row,
+                    text=f"{s_idx:02d}. {s_spk}: {s_txt}",
+                    font=ctk.CTkFont(size=12),
+                    anchor="w",
+                )
+                s_lbl.grid(row=0, column=1, sticky="w")
 
         ctk.CTkButton(
             action_row,
@@ -752,18 +838,47 @@ class ConversationApp(ctk.CTk):
             command=lambda eid=entry_id: self._delete_history_item(eid),
         ).pack(side="right")
 
+    def _toggle_sentences_drawer(self, frame, btn, count):
+        if frame.winfo_ismapped():
+            frame.pack_forget()
+            btn.configure(text=f"🎧 Sentences ({count}) ▾")
+        else:
+            frame.pack(fill="x", padx=14, pady=(0, 10))
+            btn.configure(text=f"🎧 Sentences ({count}) ▴")
+
+    def _play_single_sentence(self, sentence_path):
+        if not os.path.exists(sentence_path):
+            messagebox.showwarning("File Missing", f"Audio file not found:\n{sentence_path}")
+            return
+
+        self._stop_playback()
+        self._stop_bg_preview()
+        self.playing_file_path = sentence_path
+
+        btn = self.history_play_buttons.get(sentence_path)
+        if btn:
+            btn.configure(text="⏹️", fg_color="#DC2626", hover_color="#B91C1C")
+
+        def _play():
+            self.current_player_process = subprocess.Popen(["afplay", sentence_path])
+            self.current_player_process.wait()
+            self.after(0, self._on_playback_finished)
+
+        threading.Thread(target=_play, daemon=True).start()
+
     def _toggle_history_playback(self, entry_id, audio_file):
         if self.playing_file_path == audio_file and self.current_player_process and self.current_player_process.poll() is None:
             self._stop_playback()
             return
 
         self._stop_playback()
+        self._stop_bg_preview()
 
         if not os.path.exists(audio_file):
             messagebox.showwarning("File Missing", "The audio file for this recording could not be found.")
             return
 
-        btn = self.history_play_buttons.get(entry_id)
+        btn = self.history_play_buttons.get(audio_file)
         if btn:
             btn.configure(text="⏹️ Stop", fg_color="#DC2626", hover_color="#B91C1C")
 
@@ -778,10 +893,15 @@ class ConversationApp(ctk.CTk):
 
     def _on_playback_finished(self):
         self.playing_file_path = None
-        self.play_btn.configure(text="▶️ Play Audio", fg_color="#4F46E5", hover_color="#4338CA")
-        for btn in self.history_play_buttons.values():
+        self.play_btn.configure(text="▶️ Play Full Audio", fg_color="#4F46E5", hover_color="#4338CA")
+        for file_path, btn in self.history_play_buttons.items():
             try:
-                btn.configure(text="▶️ Play", fg_color="#4F46E5", hover_color="#4338CA")
+                if btn.cget("text") in ("⏹️ Stop", "⏹️"):
+                    btn.configure(
+                        text="▶️" if btn.cget("width") < 50 else "▶️ Play Full",
+                        fg_color="#4F46E5",
+                        hover_color="#4338CA",
+                    )
             except Exception:
                 pass
 
@@ -798,6 +918,13 @@ class ConversationApp(ctk.CTk):
         self.text_editor.delete("1.0", "end")
         self.text_editor.insert("1.0", text)
         self._on_text_changed()
+
+        # Restore conversation name if saved
+        conv_name = entry.get("conversation_name")
+        if conv_name:
+            self.conv_name_entry.delete(0, "end")
+            self.conv_name_entry.insert(0, conv_name)
+            self._update_path_preview()
 
         # Restore background ambience if available
         bg_meta = entry.get("background")
@@ -875,7 +1002,7 @@ class ConversationApp(ctk.CTk):
             from pydub import AudioSegment
 
             try:
-                raw_bg = AudioSegment.from_file(bg_path)[:6000]  # 6 second sample
+                raw_bg = AudioSegment.from_file(bg_path)[:6000]
                 ratio = max(0.01, min(1.0, vol_pct / 100.0))
                 volume_db = 20 * math.log10(ratio) - 4
                 sample = (raw_bg + volume_db).fade_in(500).fade_out(1000)
@@ -949,6 +1076,11 @@ class ConversationApp(ctk.CTk):
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 self.text_editor.delete("1.0", "end")
                 self.text_editor.insert("1.0", f.read())
+            # Auto-suggest conversation name from file name
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
+            self.conv_name_entry.delete(0, "end")
+            self.conv_name_entry.insert(0, sanitize_directory_name(base_name))
+            self._update_path_preview()
             self._on_text_changed()
 
     def _on_text_changed(self):
@@ -1167,12 +1299,13 @@ class ConversationApp(ctk.CTk):
     # ------------------ Destination Picker ------------------
     def _browse_destination_folder(self):
         chosen = filedialog.askdirectory(
-            title="Select Output Folder",
+            title="Select Base Destination Folder",
             initialdir=self.folder_entry.get().strip() or self.base_dir,
         )
         if chosen:
             self.folder_entry.delete(0, "end")
             self.folder_entry.insert(0, chosen)
+            self._update_path_preview()
 
     # ------------------ Generation Workflow ------------------
     def _start_generation(self):
@@ -1184,18 +1317,13 @@ class ConversationApp(ctk.CTk):
             messagebox.showwarning("Empty Script", "Please enter or paste conversation dialogue first.")
             return
 
-        folder = self.folder_entry.get().strip()
-        if not folder:
-            messagebox.showwarning("Missing Destination", "Please choose an output folder.")
+        base_folder = self.folder_entry.get().strip()
+        if not base_folder:
+            messagebox.showwarning("Missing Destination", "Please choose a destination folder.")
             return
 
-        filename = self.filename_entry.get().strip()
-        if not filename:
-            filename = "conversation.mp3"
-        if not filename.lower().endswith(".mp3"):
-            filename += ".mp3"
-
-        full_output_path = os.path.join(folder, filename)
+        conv_name = sanitize_directory_name(self.conv_name_entry.get().strip() or "Conversation")
+        target_dir = os.path.join(base_folder, conv_name)
 
         # Build voice map and speakers metadata for history
         voice_map = {}
@@ -1239,7 +1367,7 @@ class ConversationApp(ctk.CTk):
         # Run background thread
         thread = threading.Thread(
             target=self._run_generation_thread,
-            args=(text, voice_map, full_output_path, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta),
+            args=(text, voice_map, target_dir, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta),
             daemon=True,
         )
         thread.start()
@@ -1249,7 +1377,7 @@ class ConversationApp(ctk.CTk):
             self.cancel_requested = True
             self.status_label.configure(text="Cancelling generation...", text_color="#EF4444")
 
-    def _run_generation_thread(self, text, voice_map, output_file, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta):
+    def _run_generation_thread(self, text, voice_map, target_dir, conv_name, rate_str, pause_ms, bg_path, bg_vol, speakers_meta, bg_meta):
         def progress_callback(status_msg, progress_fraction):
             self.after(
                 0,
@@ -1267,7 +1395,8 @@ class ConversationApp(ctk.CTk):
                 convert_conversation(
                     text=text,
                     voice_map=voice_map,
-                    output_file=output_file,
+                    output_dir=target_dir,
+                    conversation_name=conv_name,
                     rate=rate_str,
                     pause_ms=pause_ms,
                     background_path=bg_path,
@@ -1281,26 +1410,28 @@ class ConversationApp(ctk.CTk):
             if result:
                 self.history_mgr.save_generation(
                     text=text,
-                    audio_source_path=output_file,
+                    audio_source_path=result["full_audio_file"],
                     duration_sec=result["duration_sec"],
                     speakers_meta=speakers_meta,
                     background_meta=bg_meta,
+                    conversation_dir=result["conversation_dir"],
+                    sentence_files=result["sentence_files"],
                 )
         except Exception as e:
             error_message = str(e)
 
         self.after(
             0,
-            lambda: self._finish_generation_ui(result, error_message, output_file),
+            lambda: self._finish_generation_ui(result, error_message),
         )
 
     def _update_progress_ui(self, status_msg, progress_fraction):
         self.progress_bar.set(progress_fraction)
         self.status_label.configure(text=status_msg)
 
-    def _finish_generation_ui(self, result, error_message, output_file):
+    def _finish_generation_ui(self, result, error_message):
         self.is_generating = False
-        self.generate_btn.configure(state="normal", text="🚀 Generate MP3")
+        self.generate_btn.configure(state="normal", text="🚀 Generate Conversation & Sentences")
         self.cancel_btn.grid_remove()
 
         if error_message:
@@ -1311,12 +1442,13 @@ class ConversationApp(ctk.CTk):
                 self.status_label.configure(text=f"Error: {error_message}", text_color="#EF4444")
                 messagebox.showerror("Generation Failed", error_message)
         else:
-            self.last_generated_file = output_file
+            self.last_generated_dir = result["conversation_dir"]
+            self.last_generated_full_file = result["full_audio_file"]
             self.progress_bar.set(1.0)
             dur = result["duration_sec"]
-            size_kb = result["file_size_bytes"] / 1024
+            n_sentences = len(result["sentence_files"])
             self.status_label.configure(
-                text=f"🎉 Created {os.path.basename(output_file)} ({dur:.1f}s, {size_kb:.1f} KB) • Saved to History!",
+                text=f"🎉 Created '{os.path.basename(result['conversation_dir'])}' (Full MP3 {dur:.1f}s + {n_sentences} Sentence MP3s)",
                 text_color="#10B981",
             )
             self.result_frame.grid()
@@ -1325,21 +1457,19 @@ class ConversationApp(ctk.CTk):
 
     # ------------------ Post-Generation Actions ------------------
     def _open_in_finder(self):
-        if self.last_generated_file and os.path.exists(self.last_generated_file):
-            subprocess.run(["open", "-R", self.last_generated_file])
-        else:
-            folder = self.folder_entry.get().strip()
-            if os.path.exists(folder):
-                subprocess.run(["open", folder])
+        target = self.last_generated_dir or self.folder_entry.get().strip() or self.base_dir
+        if os.path.exists(target):
+            subprocess.run(["open", target])
 
     def _toggle_playback(self):
-        if not self.last_generated_file or not os.path.exists(self.last_generated_file):
+        target_file = self.last_generated_full_file
+        if not target_file or not os.path.exists(target_file):
             return
 
-        if self.playing_file_path == self.last_generated_file and self.current_player_process and self.current_player_process.poll() is None:
+        if self.playing_file_path == target_file and self.current_player_process and self.current_player_process.poll() is None:
             self._stop_playback()
         else:
-            self._start_playback(self.last_generated_file)
+            self._start_playback(target_file)
 
     def _start_playback(self, file_path):
         self._stop_playback()

@@ -43,10 +43,12 @@ class HistoryManager:
         duration_sec: float,
         speakers_meta: list = None,
         background_meta: dict = None,
+        conversation_dir: str = None,
+        sentence_files: list = None,
         custom_title: str = None,
     ):
         """
-        Saves a conversation text and its generated MP3 into persistent history.
+        Saves a conversation text, full MP3, and sentence files into persistent history.
         """
         now = datetime.now()
         entry_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 10000:04d}"
@@ -63,13 +65,13 @@ class HistoryManager:
 
         title = custom_title if custom_title else (first_line[:80] + ("..." if len(first_line) > 80 else ""))
 
-        # Save text file
+        # Save text file in history
         text_filename = f"{entry_id}.txt"
         text_dest = os.path.join(self.texts_dir, text_filename)
         with open(text_dest, "w", encoding="utf-8") as f:
             f.write(text)
 
-        # Copy audio file
+        # Copy full audio file to history
         audio_filename = f"{entry_id}.mp3"
         audio_dest = os.path.join(self.audio_dir, audio_filename)
         if os.path.exists(audio_source_path):
@@ -84,6 +86,8 @@ class HistoryManager:
             "id": entry_id,
             "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
             "title": title,
+            "conversation_dir": conversation_dir or os.path.dirname(audio_source_path),
+            "conversation_name": os.path.basename(conversation_dir) if conversation_dir else "Conversation",
             "text_file": text_dest,
             "audio_file": audio_dest,
             "duration_sec": round(duration_sec, 1),
@@ -91,6 +95,7 @@ class HistoryManager:
             "speakers": speakers_meta or [],
             "background": background_meta or None,
             "lines_count": total_lines,
+            "sentence_files": sentence_files or [],
             "original_destination": audio_source_path,
         }
 

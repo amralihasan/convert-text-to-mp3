@@ -1,32 +1,43 @@
 # 🎙️ Conversation to MP3 Studio
 
-A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**. Includes atmospheric **Background Soundscapes** and an automatic **History Library** that saves and organizes your past conversation scripts and generated audio recordings for anytime playback.
+A desktop application and CLI tool that converts conversational dialogue scripts into natural-sounding multi-speaker MP3 audio using **Microsoft Edge TTS** and **pydub**. Includes atmospheric **Background Soundscapes**, automatic **History Library**, and dedicated **Conversation Directories** that export both the full dialogue MP3 and individual sentence clips.
 
 ---
 
 ## ✨ Features
 
+- **📂 Dedicated Conversation Directory**:
+  - Automatically creates a new folder named after your conversation:
+    ```
+    Software_Project_Chat/
+    ├── full_conversation.mp3       (Full dialogue with background ambience)
+    ├── conversation.txt            (Full dialogue transcript)
+    └── sentences/                  (Separate MP3 for every sentence)
+        ├── 01_Ahmed_Hey_John_How_are_you.mp3
+        ├── 02_John_Hey_Ahmed_Im_doing_pretty.mp3
+        └── ...
+    ```
 - **Modern Desktop UI with Tabs**:
-  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, scene background ambience, and audio generator.
-  - **📜 History Library Tab**: Persistent archive of every generated conversation with an embedded audio player and management tools.
+  - **🎙️ Studio Tab**: Interactive conversation editor, dynamic speaker recognition, gender/voice selectors, scene background ambience, conversation directory naming, and audio generator.
+  - **📜 History Library Tab**: Persistent archive of every generated conversation with an embedded audio player, sentence playback drawer, and management tools.
 - **☕ Scene Background Ambience (Soundscapes)**:
   - Add realistic environment sounds behind your dialogue to set the scene:
-    - ☕ **Coffee shop**: Café ambience (chatter, cups, cafe murmurs)
-    - 🏢 **Office**: Office ambience (typing, air, subtle murmur)
+    - ☕ **Coffee shop**: Café ambience (natural background chatter, cups, gentle cafe room murmurs)
+    - 🏢 **Office**: Office ambience (subtle typing, air, room tone)
     - 🚗 **Car**: Road & car driving ambience (engine drone, highway road noise)
-    - 🏠 **Home**: Quiet room (natural room tone)
+    - 🏠 **Home**: Quiet room (natural acoustic room tone)
     - 🛒 **Shopping**: Store & mall ambience (spacious reverberation, cart motion)
     - 🌳 **Outside**: Park & outdoor nature ambience (birds singing, gentle breeze)
     - 🚫 **None**: Pure clean speech
     - 📁 **Custom Audio File**: Use any `.mp3`, `.wav`, or `.m4a` file on your computer.
   - **🔊 Audition Ambience**: Preview a 5-second sample of any background track before generating.
-  - **Ambience Volume Slider**: Seamlessly control background level (5% to 45%, default 15% for subtle backing).
-- **Persistent History & Playback**:
-  - Automatically saves conversation text, generated MP3 audio, and background settings into local history archives.
-  - **Embedded Player**: Play, stop, or re-listen to any past recording directly inside the app.
+  - **Ambience Volume Slider**: Seamlessly control background level (5% to 45%, default 15%).
+- **Persistent History & Sentence Auditioning**:
+  - Automatically saves conversation text, full MP3, sentence files, and background settings into local history archives.
+  - **Embedded Player**: Play, stop, or re-listen to the full conversation or any individual sentence directly inside the app.
   - **📝 Load to Studio**: Reload any past conversation script and its ambience back into the Studio editor with one click.
   - **🔍 Search & Filter**: Search your history by title, speaker names, ambience, or creation date.
-  - **📂 Reveal in Finder**: Instantly reveal any saved audio recording in macOS Finder.
+  - **📂 Reveal in Finder**: Instantly reveal the conversation folder in macOS Finder.
 - **👨 Male / 👩 Female Gender Selector**:
   - Easily toggle each speaker between Male and Female using an interactive segmented button.
   - Automatically filters and populates the voice list with top-quality neural voices tailored to that gender.
@@ -35,7 +46,6 @@ A desktop application and CLI tool that converts conversational dialogue scripts
   - **Female Voices**: Jenny (US), Ava (US), Emma (US), Aria (US), Michelle (US), Sonia (UK), Libby (UK), Maisie (UK), Natasha (AU), Clara (CA), Salma (Arabic EG).
 - **🔊 Voice Audition**: Click "Test" next to any speaker to audition their voice before generating.
 - **Speed & Pause Control**: Adjust speaking rate (-30% to +30%) and silence pause duration between speakers.
-- **Destination Folder Picker**: Select any folder on your Mac and specify the output filename.
 - **Background Generation**: Threaded execution ensures the GUI never freezes. Includes smooth progress bar and line-by-line status.
 - **CLI Mode**: Run headlessly from the terminal whenever needed.
 
@@ -57,14 +67,11 @@ Or run via the virtual environment:
 
 ## 🛠️ CLI Usage
 
-You can also convert text files directly from your terminal:
+Convert text files directly from your terminal and export to a named directory:
 
 ```bash
-# Using default conversation.txt and conversation.mp3:
-.venv/bin/python conversation_to_mp3.py
-
-# Or specify custom input and output paths:
-.venv/bin/python conversation_to_mp3.py my_dialogue.txt /Users/username/Desktop/output.mp3
+# Using default conversation.txt into a new conversation directory:
+.venv/bin/python conversation_to_mp3.py conversation.txt My_Conversation_Folder
 ```
 
 ---

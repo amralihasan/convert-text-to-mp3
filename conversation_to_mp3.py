@@ -55,22 +55,40 @@ def extract_speakers(conversation):
     return speakers
 
 
+def make_safe_sentence_filename(index: int, speaker: str, text: str, max_words: int = 5) -> str:
+    """Generate a clean, descriptive MP3 filename for an individual sentence."""
+    clean = re.sub(r"['\"’]", "", text)
+    words = re.findall(r"\w+", clean)
+    snippet = "_".join(words[:max_words])
+    safe_speaker = re.sub(r"[^\w\-]", "", speaker)
+    if snippet:
+        return f"{index + 1:02d}_{safe_speaker}_{snippet}.mp3"
+    return f"{index + 1:02d}_{safe_speaker}.mp3"
+
+
+def sanitize_directory_name(name: str) -> str:
+    """Clean a string for use as a folder name."""
+    clean = re.sub(r"[\\/*?:\'\"<>|]", "", name)
+    clean = re.sub(r"\s+", "_", clean.strip())
+    clean = re.sub(r"_+", "_", clean).strip("_")
+    return clean if clean else "Conversation"
+
+
 async def generate_speech_parts(
     conversation,
     voice_map,
+    target_dir: str,
     rate="-10%",
     volume="+0%",
     progress_callback=None,
     is_cancelled=None,
-    temp_dir=None,
 ):
     """
-    Generate temporary audio files for each line using Edge TTS.
+    Generate audio files for each line using Edge TTS and save into target directory.
     """
-    if temp_dir is None:
-        temp_dir = tempfile.mkdtemp(prefix="conv_tts_")
-
+    os.makedirs(target_dir, exist_ok=True)
     audio_files = []
+    sentence_records = []
     total = len(conversation)
 
     for index, (speaker, message) in enumerate(conversation):
@@ -78,11 +96,12 @@ async def generate_speech_parts(
             raise asyncio.CancelledError("Audio generation cancelled by user.")
 
         voice = voice_map.get(speaker, FALLBACK_VOICE)
-        part_path = os.path.join(temp_dir, f"part_{index:04d}.mp3")
+        filename = make_safe_sentence_filename(index, speaker, message)
+        part_path = os.path.join(target_dir, filename)
 
         if progress_callback:
             progress_callback(
-                f"Generating audio for line {index + 1}/{total} ({speaker})...",
+                f"Generating sentence {index + 1}/{total} ({speaker})...",
                 (index + 0.5) / total,
             )
 
@@ -94,14 +113,21 @@ async def generate_speech_parts(
         )
         await communicate.save(part_path)
         audio_files.append(part_path)
+        sentence_records.append({
+            "index": index + 1,
+            "speaker": speaker,
+            "text": message,
+            "filename": filename,
+            "file_path": part_path,
+        })
 
         if progress_callback:
             progress_callback(
-                f"Completed line {index + 1}/{total} ({speaker})",
+                f"Completed sentence {index + 1}/{total} ({speaker})",
                 (index + 1.0) / total,
             )
 
-    return audio_files, temp_dir
+    return audio_files, sentence_records
 
 
 def mix_background_audio(
@@ -111,9 +137,6 @@ def mix_background_audio(
 ) -> AudioSegment:
     """
     Mix background ambience into speech audio.
-    - Loops background audio seamlessly if speech is longer.
-    - Scales volume relative to speech (-15 to -25 dB).
-    - Applies smooth fade in and fade out.
     """
     if not background_path or not os.path.exists(background_path) or volume_percent <= 0:
         return speech_audio
@@ -156,7 +179,7 @@ def combine_audio_files(
         raise ValueError("No audio parts to combine.")
 
     if progress_callback:
-        progress_callback("Merging audio clips and applying pause gaps...", 0.88)
+        progress_callback("Merging all sentences and applying pause gaps...", 0.88)
 
     final_audio = AudioSegment.empty()
     pause = AudioSegment.silent(duration=max(0, pause_ms))
@@ -186,7 +209,7 @@ def combine_audio_files(
         os.makedirs(output_dir, exist_ok=True)
 
     if progress_callback:
-        progress_callback("Exporting final MP3...", 0.96)
+        progress_callback("Exporting full conversation MP3...", 0.96)
 
     final_audio.export(output_file, format="mp3", bitrate="192k")
 
@@ -204,26 +227,11 @@ def combine_audio_files(
     }
 
 
-def cleanup_temp_files(files, temp_dir=None):
-    """Safely remove temporary MP3 parts and temp directory."""
-    for filename in files:
-        try:
-            if os.path.exists(filename):
-                os.remove(filename)
-        except OSError:
-            pass
-
-    if temp_dir and os.path.exists(temp_dir):
-        try:
-            os.rmdir(temp_dir)
-        except OSError:
-            pass
-
-
 async def convert_conversation(
     text: str,
     voice_map: dict,
-    output_file: str = "conversation.mp3",
+    output_dir: str = None,
+    conversation_name: str = None,
     rate: str = "-10%",
     volume: str = "+0%",
     pause_ms: int = 500,
@@ -233,40 +241,73 @@ async def convert_conversation(
     is_cancelled=None,
 ):
     """
-    End-to-end conversion from raw text to combined MP3 with ambient sound mixing.
+    End-to-end conversation generation:
+    Creates a dedicated folder containing:
+      1. full_conversation.mp3 (complete dialogue with background ambience)
+      2. conversation.txt (full dialogue transcript)
+      3. sentences/ (folder with individual MP3 files for every sentence)
     """
     conversation = parse_conversation(text)
     if not conversation:
         raise ValueError("No valid dialogue lines found in format 'Speaker: message'.")
 
-    audio_files, temp_dir = await generate_speech_parts(
-        conversation,
+    # Determine conversation directory name
+    if not conversation_name:
+        first_line = conversation[0][1] if conversation else "Conversation"
+        conversation_name = sanitize_directory_name(first_line[:30])
+
+    if not output_dir:
+        output_dir = os.path.abspath(conversation_name)
+
+    conv_dir = os.path.abspath(output_dir)
+    os.makedirs(conv_dir, exist_ok=True)
+
+    # 1. Save dialogue text transcript in the directory
+    transcript_path = os.path.join(conv_dir, "conversation.txt")
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        f.write(text.strip() + "\n")
+
+    # 2. Generate individual sentence MP3 files into sentences/ subfolder
+    sentences_dir = os.path.join(conv_dir, "sentences")
+    audio_files, sentence_records = await generate_speech_parts(
+        conversation=conversation,
         voice_map=voice_map,
+        target_dir=sentences_dir,
         rate=rate,
         volume=volume,
         progress_callback=progress_callback,
         is_cancelled=is_cancelled,
     )
 
-    try:
-        result = combine_audio_files(
-            audio_files,
-            output_file=output_file,
-            pause_ms=pause_ms,
-            background_path=background_path,
-            background_volume=background_volume,
-            progress_callback=progress_callback,
-            is_cancelled=is_cancelled,
-        )
-        return result
-    finally:
-        cleanup_temp_files(audio_files, temp_dir)
+    # 3. Combine into full conversation MP3 in the root of the conversation folder
+    full_output_file = os.path.join(conv_dir, "full_conversation.mp3")
+    combine_result = combine_audio_files(
+        files=audio_files,
+        output_file=full_output_file,
+        pause_ms=pause_ms,
+        background_path=background_path,
+        background_volume=background_volume,
+        progress_callback=progress_callback,
+        is_cancelled=is_cancelled,
+    )
+
+    return {
+        "conversation_dir": conv_dir,
+        "conversation_name": os.path.basename(conv_dir),
+        "full_audio_file": full_output_file,
+        "text_file": transcript_path,
+        "sentences_dir": sentences_dir,
+        "sentence_files": sentence_records,
+        "duration_sec": combine_result["duration_sec"],
+        "file_size_bytes": combine_result["file_size_bytes"],
+        "total_lines": len(conversation),
+    }
 
 
 # CLI Execution
 async def main():
     input_file = sys.argv[1] if len(sys.argv) > 1 else "conversation.txt"
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "conversation.mp3"
+    conv_name = sys.argv[2] if len(sys.argv) > 2 else "conversation_export"
 
     print(f"Reading conversation from '{input_file}'...")
     text = read_conversation(input_file)
@@ -284,7 +325,8 @@ async def main():
     result = await convert_conversation(
         text=text,
         voice_map=DEFAULT_VOICES,
-        output_file=output_file,
+        output_dir=os.path.abspath(conv_name),
+        conversation_name=conv_name,
         rate="-10%",
         volume="+0%",
         pause_ms=500,
@@ -292,7 +334,9 @@ async def main():
     )
 
     print(f"\nDone! 🎉")
-    print(f"MP3 created: {result['output_file']}")
+    print(f"Conversation Folder: {result['conversation_dir']}")
+    print(f"Full MP3: {result['full_audio_file']}")
+    print(f"Sentences: {len(result['sentence_files'])} individual files in {result['sentences_dir']}")
     print(f"Duration: {result['duration_sec']:.1f}s | Size: {result['file_size_bytes'] / 1024:.1f} KB")
 
 
